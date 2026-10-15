@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#121715" />
+    <title>Codex Pocket · 手机会话</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body class="phone-page">
+    <section id="pair-screen" class="pair-screen hidden">
+      <div class="brand-mark">C<span>↗</span></div>
+      <p class="eyebrow">CODEX POCKET</p>
+      <h1 id="pair-title">连接你的 Codex</h1>
+      <p id="pair-description" class="muted">
+        在电脑管理页生成二维码，用手机扫码后确认配对。
+      </p>
+      <form id="pair-form" class="hidden">
+        <label for="device-name">这台设备叫什么？</label
+        ><input
+          id="device-name"
+          maxlength="60"
+          value="我的手机"
+          autocomplete="off"
+        /><button class="primary" type="submit">确认配对</button>
+      </form>
+      <p id="pair-error" class="error-text" role="alert"></p>
+      <p class="small muted">
+        配对后可以读取并发送电脑上的会话消息。授权可随时在电脑管理页撤销。
+      </p>
+    </section>
+    <div id="workspace" class="workspace hidden">
+      <aside class="chat-sidebar">
+        <header class="sidebar-heading">
+          <div class="brand-mark mini">C<span>↗</span></div>
+          <div>
+            <strong>Codex Pocket</strong>
+            <div class="small muted">你的桌面会话，随身继续</div>
+          </div>
+          <button
+            id="logout"
+            class="icon-button"
+            title="退出并取消本设备配对"
+            aria-label="取消本设备配对"
+          >
+            ↪
+          </button>
+        </header>
+        <div class="filters">
+          <label class="sr-only" for="project-select">项目</label
+          ><select id="project-select">
+            <option value="">全部项目</option></select
+          ><label class="sr-only" for="search">搜索聊天</label
+          ><input
+            id="search"
+            type="search"
+            placeholder="搜索聊天或项目…"
+            autocomplete="off"
+          />
+        </div>
+        <div class="list-label">
+          <span>最近会话</span
+          ><button id="refresh-list" class="text-button">刷新</button>
+        </div>
+        <div id="thread-list" class="thread-list"></div>
+        <footer class="sidebar-footer">
+          <span class="online-dot"></span><span id="device-label">已连接</span
+          ><span class="small muted">非官方本地伴侣</span>
+        </footer>
+      </aside>
+      <main class="conversation">
+        <div id="empty-chat" class="empty-chat">
+          <span class="empty-symbol">↗</span>
+          <h2>从一段会话继续</h2>
+          <p class="muted">
+            选择左侧项目和聊天。<br />消息会提交到电脑上的同一个 Codex 会话。
+          </p>
+        </div>
+        <div id="chat-content" class="chat-content hidden">
+          <header class="conversation-heading">
+            <button
+              id="back"
+              class="icon-button mobile-only"
+              aria-label="返回会话列表"
+            >
+              ←
+            </button>
+            <div class="conversation-title">
+              <strong id="thread-title"></strong>
+              <div id="thread-meta" class="small muted"></div>
+            </div>
+            <span id="thread-status" class="status"></span>
+          </header>
+          <div id="messages-scroll" class="messages-scroll">
+            <button id="load-earlier" class="text-button hidden">
+              加载更早的消息
+            </button>
+            <div id="messages" class="messages"></div>
+            <div id="activity" class="activity hidden"></div>
+          </div>
+          <div class="composer-area">
+            <p id="chat-notice" class="notice small" role="status"></p>
+            <form id="composer">
+              <label class="sr-only" for="message-input">给 Codex 的消息</label
+              ><textarea
+                id="message-input"
+                rows="3"
+                maxlength="12000"
+                placeholder="给这个会话发消息…"
+              ></textarea>
+              <div class="composer-actions">
+                <span class="small muted">在电脑上执行</span
+                ><button id="continue" type="button" class="secondary">
+                  继续任务</button
+                ><button id="send" type="submit" class="primary">发送 ↑</button>
+              </div>
+            </form>
+            <p class="composer-note">
+              状态来自已保存记录，可能稍有延迟。审批和中断请在桌面处理。
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div id="toast" class="toast hidden" role="status"></div>
+  </body>
+</html>

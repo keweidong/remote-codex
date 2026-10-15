@@ -1,0 +1,216 @@
+const $ = (id) => document.getElementById(id);
+let status = null,
+  expiresAt = 0,
+  lastTunnelUrl = "";
+let token = new URLSearchParams(location.hash.slice(1)).get("token");
+if (location.hash) history.replaceState(null, "", location.pathname);
+function toast(text) {
+  $("toast").textContent = text;
+  $("toast").classList.remove("hidden");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => $("toast").classList.add("hidden"), 4000);
+}
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options.headers },
+    cache: "no-store",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+function clearPair() {
+  $("qr").classList.add("hidden");
+  $("qr-placeholder").classList.remove("hidden");
+  $("pair-link-row").classList.add("hidden");
+  $("pair-link").value = "";
+  $("qr").removeAttribute("src");
+  expiresAt = 0;
+  $("expires").textContent = "";
+}
+function render(data) {
+  status = data;
+  $("admin-content").classList.remove("hidden");
+  $("readiness").textContent = "本机服务已就绪";
+  $("readiness").classList.add("running");
+  $("admin-error").textContent = "";
+  const select = $("base-url"),
+    previous = select.value;
+  const options = [
+    ...data.lanUrls.map((url) => ({ url, label: "同一 Wi-Fi · " + url })),
+    { url: data.localUrl, label: "仅本机预览 · " + data.localUrl },
+  ];
+  if (data.tunnel.url)
+    options.unshift({
+      url: data.tunnel.url,
+      label: "外网访问 · " + data.tunnel.url,
+    });
+  const nextSignature = JSON.stringify(options);
+  if (select.dataset.signature !== nextSignature) {
+    select.replaceChildren(...options.map((o) => new Option(o.label, o.url)));
+    select.dataset.signature = nextSignature;
+    if (options.some((o) => o.url === previous)) select.value = previous;
+    if (data.tunnel.url && data.tunnel.url !== lastTunnelUrl)
+      select.value = data.tunnel.url;
+    clearPair();
+  }
+  lastTunnelUrl = data.tunnel.url;
+  addressHint();
+  const t = data.tunnel;
+  $("tunnel-state").textContent =
+    {
+      stopped: "未开启",
+      starting: "启动中",
+      running: "隧道已启动",
+      error: "启动失败",
+    }[t.status] || t.status;
+  $("tunnel-state").className =
+    "status " + (t.status === "running" ? "running" : "");
+  $("tunnel-url").textContent = t.url || "开启后显示公网地址";
+  $("tunnel-error").textContent = t.error || "";
+  $("start-tunnel").disabled =
+    t.status === "starting" || t.status === "running" || !t.available;
+  $("start-tunnel").textContent =
+    t.status === "starting" ? "等待 Cloudflare…" : "开启外网访问";
+  $("stop-tunnel").classList.toggle(
+    "hidden",
+    !["starting", "running"].includes(t.status),
+  );
+  if (!t.available)
+    $("tunnel-error").textContent =
+      "尚未找到 cloudflared。配置 CLOUDFLARED_PATH 后重启本服务。";
+  $("device-count").textContent = data.devices.length + " 台";
+  const deviceSignature = JSON.stringify(
+    data.devices.map((d) => [d.id, d.name, Math.floor(d.lastSeen / 60000)]),
+  );
+  if ($("devices").dataset.signature !== deviceSignature) {
+    $("devices").dataset.signature = deviceSignature;
+    $("devices").replaceChildren();
+    for (const device of data.devices) {
+      const row = document.createElement("div");
+      row.className = "device-row";
+      const copy = document.createElement("div"),
+        name = document.createElement("strong"),
+        detail = document.createElement("div");
+      name.textContent = device.name;
+      detail.className = "small muted";
+      detail.textContent =
+        "最近访问 " + new Date(device.lastSeen).toLocaleString("zh-CN");
+      copy.append(name, detail);
+      const button = document.createElement("button");
+      button.className = "danger-button";
+      button.textContent = "撤销";
+      button.onclick = async () => {
+        try {
+          await api("/admin/devices/" + device.id, {
+            method: "DELETE",
+            body: "{}",
+          });
+          toast("设备授权已撤销");
+          await refresh();
+        } catch (e) {
+          toast(e.message);
+        }
+      };
+      row.append(copy, button);
+      $("devices").append(row);
+    }
+    if (!data.devices.length) {
+      const text = document.createElement("p");
+      text.className = "muted empty-list";
+      text.textContent = "还没有配对设备。用手机扫描左侧二维码开始。";
+      $("devices").append(text);
+    }
+  }
+}
+function addressHint() {
+  const url = $("base-url").value;
+  $("address-hint").textContent = url.includes("trycloudflare.com")
+    ? "手机可使用流量或其他 Wi-Fi，公网访问须先配对。"
+    : url.includes("127.0.0.1")
+      ? "这个地址只用于电脑预览。手机请选局域网地址或开启外网访问。"
+      : "手机与电脑需在同一网络，并允许 Windows 防火墙访问 TCP 8766 端口。";
+}
+async function refresh() {
+  try {
+    render(await api("/admin/status"));
+  } catch (e) {
+    $("admin-error").textContent = e.message;
+    $("readiness").textContent = "连接不可用";
+  }
+}
+$("base-url").onchange = () => {
+  clearPair();
+  addressHint();
+};
+$("create-pair").onclick = async () => {
+  $("create-pair").disabled = true;
+  try {
+    const data = await api("/admin/pair", {
+      method: "POST",
+      body: JSON.stringify({ baseUrl: $("base-url").value }),
+    });
+    $("qr").src = data.qr;
+    $("qr").classList.remove("hidden");
+    $("qr-placeholder").classList.add("hidden");
+    $("pair-link").value = data.url;
+    $("preview-link").href = data.url;
+    $("pair-link-row").classList.remove("hidden");
+    expiresAt = data.expiresAt;
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    $("create-pair").disabled = false;
+  }
+};
+$("copy-link").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("pair-link").value);
+    toast("配对链接已复制");
+  } catch {
+    $("pair-link").select();
+    toast("请手动复制选中的链接");
+  }
+};
+for (const [id, action] of [
+  ["start-tunnel", "start"],
+  ["stop-tunnel", "stop"],
+])
+  $(id).onclick = async () => {
+    $(id).disabled = true;
+    clearPair();
+    try {
+      await api("/admin/tunnel", {
+        method: "POST",
+        body: JSON.stringify({ action }),
+      });
+      await refresh();
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      $(id).disabled = false;
+    }
+  };
+setInterval(() => {
+  if (expiresAt) {
+    const left = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    $("expires").textContent = left
+      ? `有效期 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`
+      : "二维码已过期";
+  }
+  if (!document.hidden) refresh();
+}, 4000);
+try {
+  if (token) {
+    await api("/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    token = null;
+  }
+  await refresh();
+} catch (e) {
+  $("admin-error").textContent = e.message;
+  $("readiness").textContent = "请重新运行启动脚本";
+}

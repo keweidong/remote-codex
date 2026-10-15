@@ -1,0 +1,5 @@
+node_modules/
+.state/
+.superpowers/
+*.log
+artifacts/

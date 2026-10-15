@@ -1,0 +1,17 @@
+{
+  "name": "codex-remote-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Paired mobile companion for existing local Codex Desktop conversations",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
+}

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#121715" />
+    <title>Codex Pocket · 电脑管理</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/admin.js"></script>
+  </head>
+  <body class="admin-page">
+    <div class="admin-wrap">
+      <header class="admin-heading">
+        <div class="brand">
+          <div class="brand-mark mini">C<span>↗</span></div>
+          <strong>Codex Pocket</strong><span class="pill">电脑管理</span>
+        </div>
+        <span id="readiness" class="status">正在连接…</span>
+      </header>
+      <section class="admin-intro">
+        <p class="eyebrow">YOUR DESKTOP, WITH YOU</p>
+        <h1>让会话，接着走。</h1>
+        <p class="muted">
+          在手机上查看进度、发送消息，继续你电脑上的 Codex 任务。
+        </p>
+      </section>
+      <p id="admin-error" class="error-text" role="alert"></p>
+      <div id="admin-content" class="admin-grid hidden">
+        <section class="card pairing-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">01 / PAIR YOUR PHONE</p>
+              <h2>连接手机</h2>
+            </div>
+            <span id="expires" class="small muted"></span>
+          </div>
+          <label for="base-url">选择手机能访问的地址</label
+          ><select id="base-url"></select>
+          <p id="address-hint" class="small muted"></p>
+          <div class="qr-area">
+            <div id="qr-placeholder">
+              <span class="qr-placeholder-icon">⌘</span>
+              <p>生成一次性配对二维码</p>
+            </div>
+            <img
+              id="qr"
+              class="hidden"
+              width="260"
+              height="260"
+              alt="手机配对二维码"
+            />
+          </div>
+          <button id="create-pair" class="primary wide">生成配对二维码</button>
+          <div id="pair-link-row" class="pair-link-row hidden">
+            <input id="pair-link" readonly aria-label="一次性配对链接" /><button
+              id="copy-link"
+              class="secondary"
+            >
+              复制</button
+            ><a
+              id="preview-link"
+              class="text-button"
+              target="_blank"
+              rel="noreferrer"
+              >打开</a
+            >
+          </div>
+          <p class="small muted">
+            二维码 5 分钟内有效，只能配对一次。添加另一台设备时重新生成。
+          </p>
+        </section>
+        <section class="card tunnel-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / CONNECT ANYWHERE</p>
+              <h2>外网访问</h2>
+            </div>
+            <span id="tunnel-state" class="status">未开启</span>
+          </div>
+          <p class="muted">
+            手机不在同一 Wi-Fi 时，可以开启临时 Cloudflare 隧道。
+          </p>
+          <div id="tunnel-url" class="tunnel-address">开启后显示公网地址</div>
+          <p id="tunnel-error" class="error-text"></p>
+          <div class="button-row">
+            <button id="start-tunnel" class="secondary">开启外网访问</button
+            ><button id="stop-tunnel" class="text-button hidden">
+              关闭隧道
+            </button>
+          </div>
+          <p class="small muted">
+            地址在重新启动隧道后会变化，需要重新扫码。流量经 Cloudflare
+            转发；管理页不会公开。
+          </p>
+        </section>
+        <section class="card devices-card">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">03 / YOUR DEVICES</p>
+              <h2>已配对设备</h2>
+            </div>
+            <span id="device-count" class="pill">0 台</span>
+          </div>
+          <div id="devices"></div>
+        </section>
+        <section class="card details-card">
+          <h3>会话仍在你的电脑上</h3>
+          <p class="muted">
+            保持 Codex Desktop 和此服务运行。API 接入方式保持原样，手机不需要
+            API Key。
+          </p>
+          <p class="small muted">
+            首版支持已有会话的历史、状态、发送和继续。命令审批与中断保留在桌面；“已提交”表示进入队列，不代表任务已完成。
+          </p>
+        </section>
+      </div>
+      <footer class="admin-footer">
+        Codex Pocket · 独立本地工具 · v0.1 <span>本页仅供这台电脑管理</span>
+      </footer>
+    </div>
+    <div id="toast" class="toast hidden" role="status"></div>
+  </body>
+</html>
