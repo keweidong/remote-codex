@@ -12,10 +12,12 @@ const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const capabilities = {
   read: true,
   send: true,
+  create: true,
   continue: true,
   interrupt: false,
   approvals: false,
   statusSource: "persisted-history",
+  modelSelection:true,
 };
 function json(res, code, value) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -80,6 +82,8 @@ function headers(res) {
 export function createApp({
   store,
   queue,
+  creator,
+  models,
   dataDir,
   adminToken,
   cloudflaredPath,
@@ -93,6 +97,7 @@ export function createApp({
     phoneHost,
     tunnel,
     servers = [];
+  let stopping=false,stopPromise;
   function rate(key, max = 20) {
     const now = Date.now();
     if (limits.size > 2000)
@@ -148,6 +153,7 @@ export function createApp({
     return async (req, res) => {
       headers(res);
       try {
+        if(stopping)throw error('服务正在停止，请稍后重试。',503);
         const host = req.headers.host || "";
         if (
           surface === "admin" &&
@@ -264,6 +270,10 @@ export function createApp({
         rate("device:" + paired.id, 240);
         if (req.method === "GET" && path === "/api/session")
           return json(res, 200, { device: paired, capabilities });
+        if(req.method==='GET'&&path==='/api/models'){
+          if(!models)throw error('模型目录服务暂不可用，请在电脑重启服务。',503);
+          return json(res,200,await models.list());
+        }
         if (req.method === "GET" && path === "/api/projects")
           return json(res, 200, { projects: store.listProjects() });
         if (req.method === "GET" && path === "/api/threads")
@@ -273,6 +283,20 @@ export function createApp({
               search: url.searchParams.get("search") || "",
             }),
           });
+        const projectMatch = path.match(/^\/api\/projects\/([^/]+)\/threads$/);
+        if (projectMatch && req.method === "POST") {
+          requireOrigin(req);
+          if (!creator) throw error("新建会话暂不可用，请在电脑重启服务。", 503);
+          const input = await body(req);
+          return json(res, 201, await creator.create({
+            projectId: decodeURIComponent(projectMatch[1]),
+            text: input?.text,
+            requestId: input?.requestId,
+            deviceId: paired.id,
+            model:input?.model,
+            effort:input?.effort,
+          }));
+        }
         const match = path.match(
           /^\/api\/threads\/([a-zA-Z0-9_-]{1,128})(\/messages)?$/,
         );
@@ -297,6 +321,8 @@ export function createApp({
               text: input.text,
               requestId: input.requestId,
               deviceId: paired.id,
+              model:input?.model,
+              effort:input?.effort,
             }),
           );
         }
@@ -317,6 +343,7 @@ export function createApp({
           error: e.statusCode
             ? e.message
             : "服务读取失败，请在电脑上检查运行状态。",
+          ...(e.notSubmitted===true?{notSubmitted:true}:{}),
         });
       }
     };
@@ -369,16 +396,15 @@ export function createApp({
       };
     },
     async stop() {
-      tunnel?.stop();
-      await Promise.all(
-        servers.map(
-          (s) =>
-            new Promise((r) => {
-              s.closeIdleConnections();
-              s.close(() => r());
-            }),
-        ),
-      );
+      if(stopPromise)return stopPromise;
+      stopping=true;
+      stopPromise=(async()=>{
+        const listeners=servers.map(s=>new Promise(resolve=>{s.close(()=>resolve());s.closeIdleConnections();}));
+        tunnel?.stop();
+        await Promise.all([queue?.stop?.(),creator?.stop(),models?.stop?.()]);
+        await Promise.all(listeners);
+      })();
+      return stopPromise;
     },
   };
 }

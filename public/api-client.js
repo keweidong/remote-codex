@@ -14,14 +14,18 @@ export function createApiClient({
     const method = (options.method || "GET").toUpperCase();
     const isSubmission =
       method === "POST" && /^\/api\/threads\/[^/?]+\/messages$/.test(path);
+    const isCreation =
+      method === "POST" && /^\/api\/projects\/[^/?]+\/threads$/.test(path);
     const isHistory =
       method === "GET" && /^\/api\/threads\/[^/?]+(?:\?|$)/.test(path);
     let status = null;
     let contentType = "";
     function failure(phase, reason) {
-      const submissionUnknown = isSubmission && phase !== "http";
+      const submissionUnknown = (isSubmission || isCreation) && phase !== "http";
       const prefix = submissionUnknown
-        ? "提交结果未确认，请检查桌面队列，勿重复发送。"
+        ? isCreation
+          ? "新会话创建结果未确认，请先检查会话列表；重试原文会沿用同一请求。"
+          : "提交结果未确认，请检查桌面队列，勿重复发送。"
         : isHistory
           ? "历史刷新失败："
           : "";
@@ -65,20 +69,30 @@ export function createApiClient({
     }
     if (!data || typeof data !== "object" || Array.isArray(data))
       throw failure("response", `服务响应格式不符合预期${http}。`);
-    if (!response.ok)
-      throw failure(
+    if (!response.ok) {
+      const error = failure(
         "http",
         typeof data.error === "string" && data.error
           ? data.error
           : `请求失败${http}。`,
       );
+      error.notSubmitted = data.notSubmitted === true;
+      throw error;
+    }
     if (
       isSubmission &&
-      (data.status !== "queued" ||
+      (!["queued", "started"].includes(data.status) ||
         typeof data.messageId !== "string" ||
         !data.messageId)
     )
-      throw failure("response", `服务未返回有效的排队确认${http}。`);
+      throw failure("response", `服务未返回有效的提交确认${http}。`);
+    if (
+      isCreation &&
+      (data.status !== "created" ||
+        typeof data.threadId !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,128}$/.test(data.threadId))
+    )
+      throw failure("response", `服务未返回有效的新会话确认${http}。`);
     return data;
   };
 }

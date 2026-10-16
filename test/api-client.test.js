@@ -8,6 +8,25 @@ const postPath = "/api/threads/fixture/messages";
 const post = { method: "POST", body: "{}" };
 const unknown = "提交结果未确认，请检查桌面队列，勿重复发送";
 
+test("new session network failures are reported as uncertain creation", async () => {
+  const api = createApiClient({ fetchImpl: async () => { throw new Error("offline"); } });
+  await assert.rejects(api("/api/projects/p1/threads", post), e => {
+    assert.equal(e.submissionUnknown, true);
+    assert.match(e.message, /新会话创建结果未确认/);
+    return true;
+  });
+});
+
+test("new session requires a valid creation acknowledgment", async () => {
+  for (const result of [{}, {status: "created", threadId: ""}, {status: "created", threadId: "../bad"}]) {
+    const api = createApiClient({ fetchImpl: async () => Response.json(result) });
+    await assert.rejects(api("/api/projects/p1/threads", post), e => e.submissionUnknown === true);
+  }
+  const result = {status: "created", threadId: "new-thread", requestId: "request", projectId: "p1"};
+  const api = createApiClient({ fetchImpl: async () => Response.json(result) });
+  assert.deepEqual(await api("/api/projects/p1/threads", post), result);
+});
+
 test("HTML 502 preserves response metadata without displaying its body", async () => {
   const api = createApiClient({
     fetchImpl: async () =>

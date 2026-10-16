@@ -46,6 +46,17 @@ export function createCodexStore({ codexHome }) {
     } catch {}
     return meta;
   }
+  function canonicalProjectId(id) {
+    const mappings =
+      metadata()["app-server-project-id-by-legacy-project-id-by-host"];
+    const home = cleanPath(resolve(codexHome));
+    const host = Object.keys(mappings || {}).find(
+      (key) => key.startsWith("local:") && cleanPath(key.slice(6)) === home,
+    );
+    const aliases = mappings?.[host];
+    const canonical = aliases && Object.hasOwn(aliases, id) ? aliases[id] : null;
+    return typeof canonical === "string" && canonical ? canonical : id;
+  }
   function projects() {
     const result = new Map();
     if (tables.has("projects"))
@@ -58,8 +69,9 @@ export function createCodexStore({ codexHome }) {
         .prepare("SELECT * FROM project_roots ORDER BY position")
         .all())
         result.get(r.project_id)?.paths.push(r.path);
-    for (const [id, p] of Object.entries(metadata()["local-projects"] || {})) {
+    for (const [legacyId, p] of Object.entries(metadata()["local-projects"] || {})) {
       if (!p || typeof p !== "object") continue;
+      const id = canonicalProjectId(legacyId);
       const roots = (Array.isArray(p.rootPaths) ? p.rootPaths : []).filter(
         (x) => typeof x === "string",
       );
@@ -92,7 +104,7 @@ export function createCodexStore({ codexHome }) {
   }
   function projectFor(row, ps) {
     const assigned = metadata()["thread-project-assignments"]?.[row.id];
-    const id = row.project_id || assigned?.projectId;
+    const id = canonicalProjectId(row.project_id || assigned?.projectId);
     if (id && ps.has(id)) return ps.get(id);
     const root = cleanPath(row.cwd);
     let match = null,
@@ -126,6 +138,7 @@ export function createCodexStore({ codexHome }) {
       updatedAt: row.updated_at_ms || row.updated_at * 1000 || 0,
       status: state(row.id),
       model: row.model || "",
+      reasoningEffort:row.reasoning_effort||null,
     };
   }
   function requireThread(id) {
@@ -147,12 +160,13 @@ export function createCodexStore({ codexHome }) {
   }
   function listThreads({ projectId = "", search = "", limit = 100 } = {}) {
     const ps = projects(),
+      selectedProjectId = canonicalProjectId(projectId),
       term = String(search).toLowerCase().slice(0, 200);
     return rawRows()
       .map((r) => projectThread(r, ps))
       .filter(
         (r) =>
-          (!projectId || r.projectId === projectId) &&
+          (!selectedProjectId || r.projectId === selectedProjectId) &&
           (!term ||
             [r.title, r.projectName, r.cwd].some((v) =>
               String(v).toLowerCase().includes(term),
@@ -179,6 +193,16 @@ export function createCodexStore({ codexHome }) {
         count: counts.get("__unassigned__"),
       });
     return values;
+  }
+  function requireProject(id) {
+    if (typeof id !== "string" || id.length > 128)
+      throw error("找不到这个项目。", 404);
+    const project = projects().get(canonicalProjectId(id));
+    if (!project) throw error("找不到这个项目。", 404);
+    return {
+      ...project,
+      paths: [...project.paths],
+    };
   }
   function getThread(id, { limit = 80, before } = {}) {
     const thread = requireThread(id);
@@ -259,9 +283,17 @@ export function createCodexStore({ codexHome }) {
   }
   return {
     listProjects,
+    requireProject,
     listThreads,
     getThread,
     requireThread,
+    pendingCount(id){
+      const path=join(codexHome,'queue_1.sqlite');
+      if(!existsSync(path))return 0;
+      const queued=new DatabaseSync(path,{readOnly:true});
+      try{return queued.prepare('SELECT COUNT(*) AS n FROM queued_items WHERE thread_id=?').get(id).n;}
+      finally{queued.close();}
+    },
     close() {
       history?.close();
       db.close();

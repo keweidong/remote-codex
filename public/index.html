@@ -30,7 +30,7 @@
       </form>
       <p id="pair-error" class="error-text" role="alert"></p>
       <p class="small muted">
-        配对后可以读取并发送电脑上的会话消息。授权可随时在电脑管理页撤销。
+        配对后可以查看、继续和新建会话。授权可随时在电脑管理页撤销。
       </p>
     </section>
     <div id="workspace" class="workspace hidden">
@@ -50,6 +50,9 @@
             ↪
           </button>
         </header>
+        <div class="new-thread-entry">
+          <button id="new-thread" class="primary wide" type="button" disabled>＋ 新建会话</button>
+        </div>
         <div class="filters">
           <label class="sr-only" for="project-select">项目</label
           ><select id="project-select">
@@ -75,9 +78,9 @@
       <main class="conversation">
         <div id="empty-chat" class="empty-chat">
           <span class="empty-symbol">↗</span>
-          <h2>从一段会话继续</h2>
+          <h2>开始新会话，或继续上次任务</h2>
           <p class="muted">
-            选择左侧项目和聊天。<br />消息会提交到电脑上的同一个 Codex 会话。
+            选择项目后新建会话，或打开已有聊天继续。<br />任务在你的电脑上执行。
           </p>
         </div>
         <div id="chat-content" class="chat-content hidden">
@@ -105,6 +108,12 @@
           <div class="composer-area">
             <p id="chat-notice" class="notice small" role="status"></p>
             <form id="composer">
+              <div class="model-settings">
+                <label for="model-select">模型<select id="model-select" disabled><option value="">沿用会话 / 默认模型</option></select></label>
+                <label for="effort-select">推理强度<select id="effort-select" disabled><option value="">沿用会话 / 默认强度</option></select></label>
+              </div>
+              <p id="model-notice" class="notice small" role="status">正在读取模型列表…</p>
+              <p class="model-hint small muted">选择将在发送时应用；桌面占用的会话请在桌面切换，或在手机新建会话。</p>
               <label class="sr-only" for="message-input">给 Codex 的消息</label
               ><textarea
                 id="message-input"
@@ -126,6 +135,27 @@
         </div>
       </main>
     </div>
+    <dialog id="new-thread-dialog" class="new-thread-dialog" aria-labelledby="new-thread-title" aria-describedby="new-thread-description">
+      <form id="new-thread-form">
+        <p class="eyebrow">CODEX POCKET</p>
+        <h2 id="new-thread-title">新建会话</h2>
+        <p id="new-thread-description" class="muted small">选择电脑上的项目，发送首条消息开始任务。</p>
+        <label for="new-project">项目</label>
+        <select id="new-project" required></select>
+        <div class="model-settings">
+          <label for="new-model">模型<select id="new-model" disabled><option value="">使用默认模型</option></select></label>
+          <label for="new-effort">推理强度<select id="new-effort" disabled><option value="">使用默认强度</option></select></label>
+        </div>
+        <p id="new-model-notice" class="notice small" role="status">正在读取模型列表…</p>
+        <label for="new-message">首条消息</label>
+        <textarea id="new-message" rows="5" maxlength="12000" placeholder="想让 Codex 帮你做什么？" required></textarea>
+        <p id="new-thread-error" class="error-text small" role="alert"></p>
+        <div class="new-thread-actions">
+          <button id="cancel-new-thread" class="secondary" type="button">取消</button>
+          <button id="create-thread" class="primary" type="submit">创建并发送</button>
+        </div>
+      </form>
+    </dialog>
     <div id="toast" class="toast hidden" role="status"></div>
   </body>
 </html>

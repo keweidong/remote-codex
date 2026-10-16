@@ -11,6 +11,9 @@ import { randomBytes } from "node:crypto";
 import { createCodexStore } from "./codex-store.js";
 import { createApp } from "./server.js";
 import { Queue } from "./queue.js";
+import { SessionCreator } from "./session-creator.js";
+import {ModelCatalog} from './model-catalog.js';
+import {ConfiguredTurns} from './configured-turn.js';
 import { saveJson } from "./auth.js";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
@@ -38,10 +41,21 @@ const cloudflaredPath =
     "cloudflared.exe",
   );
 const store = createCodexStore({ codexHome });
+const models=new ModelCatalog({executable:process.env.CODEX_CLI_PATH||'codex',codexHome,cwd:resolve(import.meta.dirname,'..')});
+const configuredTurns=new ConfiguredTurns({store,executable:process.env.CODEX_CLI_PATH||'codex',codexHome});
 const queue = new Queue({
   store,
   dataDir,
   executable: process.env.CODEX_CLI_PATH || "codex",
+  models,
+  configuredTurns,
+});
+const creator = new SessionCreator({
+  store,
+  dataDir,
+  codexHome,
+  executable: process.env.CODEX_CLI_PATH || "codex",
+  models,
 });
 let stopping = false;
 const stop = async () => {
@@ -57,6 +71,8 @@ const stop = async () => {
 const app = createApp({
   store,
   queue,
+  creator,
+  models,
   dataDir,
   adminToken,
   cloudflaredPath,

@@ -26,6 +26,14 @@ Mobile endpoints: `POST /api/pair {token,name}` -> device cookie; `GET /api/sess
 
 Admin endpoints: `POST /admin/login {token}`; `GET /admin/status` -> `{ready,phonePort,lanUrls,localUrl,tunnel:{status,url,error},devices,capabilities}`; `POST /admin/pair {baseUrl}` -> `{url,qr,expiresAt}`; `DELETE /admin/devices/:id`; `POST /admin/tunnel {action:'start'|'stop'}`. baseUrl must match an advertised phone base. Admin routes do not exist on mobile listener. All browser POST/DELETE calls supply JSON plus same-origin Origin.
 
-## Verification
+## 2026-10-16 mobile creation extension
+
+The phone can create a conversation in an existing registered local project, including projects with no chats. A project picker and required initial message call `POST /api/projects/:projectId/threads {text,requestId}`, returning HTTP 201 with `{status:'created',threadId,requestId,projectId,cwd}`. Paired-device authentication and same-origin checks apply. `requireProject(id)` validates project membership and the creator chooses an existing project directory.
+
+`SessionCreator` launches official `codex app-server --stdio` with `shell:false` and the same `CODEX_HOME`. It initializes as `codex_remote_web` with experimental API support, calls `thread/start {cwd,projectId,ephemeral:false}`, verifies the returned desktop-visible source and project, then calls `turn/start` with the initial message. The connection stays alive through `turn/completed`. Subsequent messages retain the existing queue flow. No second writer is opened for an existing thread. Creation acknowledgment is distinct from task completion; shutdown stops service-owned initial-turn processes. Server-initiated approval requests are not accepted by this client.
+
+Creation request records persist under the remote service data directory; the browser keeps unacknowledged requests in a separate session-storage namespace. Same-request retries coalesce/replay, while an unknown startup result blocks another launch. The allocated thread id is saved before starting the first turn. Each protocol request has a deadline; after acknowledgment the process continues until the turn exits, occupying a bounded running slot. The UI clears the search and opens the new thread after acknowledgment even if history/list refresh fails. Desktop project migration aliases are resolved only for the current local Codex home.
+
+## Verification scope
 
 Behavior tests cover SQLite project attribution/history paging without writes, one-time expiry/revocation, credential hashing, unauthenticated rejection, admin isolation, CSRF, shell-safe queue arguments and idempotency. Fixtures isolate Codex state. Live verification reads actual projects/chats only; no unsolicited test messages to existing conversations. Browser check covers local admin, generated pairing, phone-sized rendering and history. Public network and real phone connection remain unverified until user starts the tunnel and scans.
