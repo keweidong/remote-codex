@@ -17,7 +17,7 @@ test("queue treats shell-looking text as a single value and coalesces duplicate 
     output = join(dir, "args.jsonl");
   writeFileSync(
     cli,
-    `require('node:fs').appendFileSync(${JSON.stringify(output)},JSON.stringify(process.argv.slice(2))+'\\n');console.log('Queued message message-1 for thread ${threadId}');`,
+    `require('node:fs').appendFileSync(${JSON.stringify(output)},JSON.stringify(process.argv.slice(2))+'\\n');console.log('Queued message message-1 for thread ${threadId}.');`,
   );
   const q = new Queue({
     store,

@@ -35,6 +35,7 @@ test("real HTTP pairing gates private data, isolates admin, rejects CSRF and rev
   assert.equal((await fetch(phone + "/api/projects")).status, 401);
   assert.equal((await fetch(phone + "/admin/status")).status, 404);
   assert.equal((await fetch(phone + "/admin.html")).status, 404);
+  assert.equal((await fetch(phone + "/api-client.js")).status, 200);
   assert.equal((await fetch(admin + "/admin/status")).status, 401);
   let res = await fetch(admin + "/admin/login", {
     method: "POST",

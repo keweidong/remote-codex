@@ -121,7 +121,7 @@ export class Queue {
       );
       child.on("exit", (code) => {
         const match = stdout.match(
-          /Queued message\s+(\S+)\s+for thread\s+(\S+)/i,
+          /Queued message\s+(\S+)\s+for thread\s+([A-Za-z0-9_-]+)\.?\s*$/im,
         );
         if (code === 0 && match && match[2] === thread.id) done(null, match[1]);
         else

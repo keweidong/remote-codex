@@ -167,6 +167,7 @@ export function createApp({
               : {
                   "/": "index.html",
                   "/app.js": "app.js",
+                  "/api-client.js": "api-client.js",
                   "/submissions.js": "submissions.js",
                   "/style.css": "style.css",
                 };

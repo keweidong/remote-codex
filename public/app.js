@@ -1,6 +1,11 @@
 import { SubmissionTracker } from "./submissions.js";
+import { createApiClient } from "./api-client.js";
 const $ = (id) => document.getElementById(id);
 const submissions = new SubmissionTracker(sessionStorage);
+const historyNotice = document.createElement("p");
+historyNotice.className = "notice small";
+historyNotice.setAttribute("role", "status");
+$("chat-notice").after(historyNotice);
 let selected = null,
   threads = [],
   messages = [],
@@ -40,24 +45,7 @@ function pairScreen() {
       "确认后，这台手机可以读取并发送你的桌面会话消息。";
   }
 }
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
-    cache: "no-store",
-  });
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error("服务响应无效，请稍后重试。");
-  }
-  if (!response.ok) {
-    if (response.status === 401 && !path.includes("/api/pair")) pairScreen();
-    throw new Error(data.error || "请求失败");
-  }
-  return data;
-}
+const api = createApiClient({ fetchImpl: fetch, onUnauthorized: pairScreen });
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -139,6 +127,7 @@ function selectThread(id) {
   signature = "";
   nextBefore = null;
   hasMore = false;
+  historyNotice.textContent = "";
   $("chat-notice").textContent = unresolved
     ? "保留了一条未确认提交。请先查看是否已收到，重试原文会沿用相同请求标识。"
     : "";
@@ -192,7 +181,14 @@ async function loadChat(initial = false) {
   if (!selected) return;
   const id = selected,
     epoch = ++chatEpoch;
-  const data = await api("/api/threads/" + encodeURIComponent(id));
+  let data;
+  try {
+    data = await api("/api/threads/" + encodeURIComponent(id));
+  } catch (e) {
+    if (selected === id && epoch === chatEpoch)
+      historyNotice.textContent = e.message;
+    throw e;
+  }
   if (selected !== id || epoch !== chatEpoch) return;
   $("thread-title").textContent = data.thread.title;
   $("thread-meta").textContent =
@@ -215,7 +211,7 @@ async function loadChat(initial = false) {
     ? "记录状态：" + data.activity + "…"
     : "";
   $("activity").classList.toggle("hidden", !data.activity);
-  if (data.warning) $("chat-notice").textContent = data.warning;
+  historyNotice.textContent = data.warning || "";
   renderMessages(initial);
 }
 async function send(text) {
@@ -225,28 +221,34 @@ async function send(text) {
   $("send").disabled = true;
   $("continue").disabled = true;
   const submission = submissions.get(target, text, uuid);
+  let result;
   try {
-    await api(`/api/threads/${target}/messages`, {
+    result = await api(`/api/threads/${target}/messages`, {
       method: "POST",
       body: JSON.stringify({ text, requestId: submission.requestId }),
     });
-    submissions.acknowledge(submission.requestId);
-    drafts.delete(target);
-    if (selected === target) {
-      $("message-input").value = "";
-      $("chat-notice").textContent =
-        "已提交到桌面队列。等待 Codex 处理；若一直无新回复，请在电脑打开该会话。";
-    }
-    toast("消息已提交");
-    await loadChat();
   } catch (e) {
     toast(e.message);
     if (selected === target) $("chat-notice").textContent = e.message;
+    return;
   } finally {
     sending = false;
     $("send").disabled = false;
     $("continue").disabled = false;
   }
+  submissions.acknowledge(submission.requestId);
+  drafts.delete(target);
+  if (selected === target) {
+    $("message-input").value = "";
+    $("chat-notice").textContent =
+      "已提交到桌面队列。" +
+      (typeof result.notice === "string" && result.notice
+        ? result.notice
+        : "等待 Codex 处理；若一直无新回复，请在电脑打开该会话。");
+  }
+  toast("消息已提交");
+  // Queue confirmation is final even if the separate history refresh fails.
+  if (selected === target) await loadChat().catch(() => {});
 }
 async function boot() {
   if (grant) {
@@ -318,6 +320,7 @@ $("load-earlier").onclick = async () => {
     box.scrollTop = oldTop + box.scrollHeight - oldHeight;
     $("load-earlier").classList.toggle("hidden", !hasMore);
   } catch (e) {
+    if (selected === id) historyNotice.textContent = e.message;
     toast(e.message);
   }
 };
@@ -339,9 +342,7 @@ setInterval(() => {
     !$("workspace").classList.contains("hidden") &&
     selected
   )
-    loadChat().catch((e) => {
-      $("chat-notice").textContent = e.message;
-    });
+    loadChat().catch(() => {});
 }, 2500);
 setInterval(() => {
   if (!document.hidden && !$("workspace").classList.contains("hidden"))
