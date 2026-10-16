@@ -6,7 +6,27 @@ $taskRuntimePath = Join-Path $taskData 'runtime.json'
 $taskNode = (Get-Command node.exe -ErrorAction Stop).Source
 $taskVersion = & $taskNode --version
 if ([int]($taskVersion.TrimStart('v').Split('.')[0]) -lt 24) { throw 'Node.js 24 or newer is required.' }
-if (-not $env:CODEX_CLI_PATH) { $env:CODEX_CLI_PATH = (Get-Command codex.exe -ErrorAction Stop).Source }
+if (-not $env:CODEX_CLI_PATH) {
+  $taskCodexCommand = Get-Command codex.exe -ErrorAction SilentlyContinue
+  if ($taskCodexCommand) {
+    $env:CODEX_CLI_PATH = $taskCodexCommand.Source
+  } else {
+    $taskCodexCandidates = @()
+    $taskCodexBin = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin'
+    if (Test-Path -LiteralPath $taskCodexBin) {
+      $taskCodexCandidates += Get-ChildItem -LiteralPath $taskCodexBin -Filter 'codex.exe' -File -Recurse -ErrorAction SilentlyContinue
+    }
+    $taskPluginCodex = Join-Path $env:USERPROFILE '.codex\plugins\.plugin-appserver\codex.exe'
+    if (Test-Path -LiteralPath $taskPluginCodex -PathType Leaf) {
+      $taskCodexCandidates += Get-Item -LiteralPath $taskPluginCodex
+    }
+    $taskCodex = $taskCodexCandidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $taskCodex) {
+      throw 'Codex CLI was not found. Add codex.exe to PATH or set CODEX_CLI_PATH to its full path.'
+    }
+    $env:CODEX_CLI_PATH = $taskCodex.FullName
+  }
+}
 if (-not (Test-Path -LiteralPath (Join-Path $taskRoot 'node_modules\qrcode\package.json'))) {
   Push-Location $taskRoot
   try { & npm.cmd install --ignore-scripts --no-audit --no-fund; if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' } } finally { Pop-Location }
