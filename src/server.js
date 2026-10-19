@@ -6,7 +6,7 @@ import { networkInterfaces } from "node:os";
 import { randomBytes } from "node:crypto";
 import QRCode from "qrcode";
 import { AuthStore, error, equalSecret } from "./auth.js";
-import { Tunnel } from "./tunnel.js";
+import { Tunnel, loadTunnelConfig } from "./tunnel.js";
 
 const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
 const capabilities = {
@@ -87,6 +87,7 @@ export function createApp({
   dataDir,
   adminToken,
   cloudflaredPath,
+  cloudflaredPrefixArgs = [],
   onShutdown,
 }) {
   const auth = new AuthStore({ dataDir });
@@ -243,6 +244,12 @@ export function createApp({
               input.action === "start" ? tunnel.start() : tunnel.stop(),
             );
           }
+          if (path === "/admin/tunnel-config" && req.method === "POST") {
+            rate("tunnel-config", 10);
+            // The address may change, so any outstanding QR code dies with it.
+            auth.grant = null;
+            return json(res, 200, tunnel.setConfig(input || {}));
+          }
           if (
             path === "/admin/shutdown" &&
             req.method === "POST" &&
@@ -260,7 +267,15 @@ export function createApp({
           requireOrigin(req);
           rate("pair:" + req.socket.remoteAddress);
           const input = await body(req);
-          const paired = auth.pair(input.token, input.name);
+          // Remember which address this phone paired through, so the admin list
+          // can say why a device stopped working after the address changed.
+          const proto =
+            req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+          const paired = auth.pair(
+            input.token,
+            input.name,
+            `${proto}://${(req.headers.host || "").slice(0, 200)}`,
+          );
           setCookie(res, "crw_device", paired.token, {
             secure: req.headers["x-forwarded-proto"] === "https",
           });
@@ -389,7 +404,17 @@ export function createApp({
         );
         throw e;
       }
-      tunnel = new Tunnel({ executable: cloudflaredPath, port: phonePort });
+      tunnel = new Tunnel({
+        executable: cloudflaredPath,
+        port: phonePort,
+        dataDir,
+        config: loadTunnelConfig(dataDir),
+        prefixArgs: cloudflaredPrefixArgs,
+      });
+      // A fixed hostname never changes, so restoring it at boot is exactly what
+      // keeps an existing pairing usable. A random quick-tunnel URL is never
+      // auto-started: it would hand out an address that dies with the process.
+      if (tunnel.shouldAutostart()) tunnel.start();
       return {
         adminUrl: `http://127.0.0.1:${adminPort}`,
         phoneUrl: `http://127.0.0.1:${phonePort}`,

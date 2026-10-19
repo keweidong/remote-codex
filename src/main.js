@@ -28,6 +28,30 @@ if (!existsSync(tokenPath))
   });
 const adminToken = readFileSync(tokenPath, "utf8").trim();
 if (adminToken.length < 32) throw new Error("管理凭据无效");
+const runtimePath = join(dataDir, "runtime.json");
+// A hard kill leaves runtime.json pointing at a dead pid. Drop that record so
+// the launcher never trusts it. EPERM means the process exists, so keep it.
+function staleRuntime(file) {
+  let record;
+  try {
+    record = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return false;
+  }
+  if (!record || typeof record.pid !== "number" || record.pid === process.pid)
+    return false;
+  try {
+    process.kill(record.pid, 0);
+    return false;
+  } catch (e) {
+    return e.code === "ESRCH";
+  }
+}
+if (staleRuntime(runtimePath)) {
+  try {
+    unlinkSync(runtimePath);
+  } catch {}
+}
 const cloudflaredPath =
   process.env.CLOUDFLARED_PATH ||
   join(
@@ -64,7 +88,7 @@ const stop = async () => {
   await app.stop();
   store.close();
   try {
-    unlinkSync(join(dataDir, "runtime.json"));
+    unlinkSync(runtimePath);
   } catch {}
   process.exit(0);
 };
@@ -84,7 +108,7 @@ try {
     phonePort: Number(process.env.CODEX_REMOTE_PHONE_PORT) || 8766,
     phoneHost: process.env.CODEX_REMOTE_HOST || "0.0.0.0",
   });
-  saveJson(join(dataDir, "runtime.json"), {
+  saveJson(runtimePath, {
     pid: process.pid,
     projectDir: resolve(import.meta.dirname, ".."),
     ...urls,

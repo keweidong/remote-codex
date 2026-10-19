@@ -77,8 +77,8 @@
             </div>
             <span id="tunnel-state" class="status">未开启</span>
           </div>
-          <p class="muted">
-            手机不在同一 Wi-Fi 时，可以开启临时 Cloudflare 隧道。
+          <p id="tunnel-description" class="muted">
+            手机不在同一 Wi-Fi 时，可以通过 Cloudflare 隧道访问。
           </p>
           <div id="tunnel-url" class="tunnel-address">开启后显示公网地址</div>
           <p id="tunnel-error" class="error-text"></p>
@@ -88,10 +88,7 @@
               关闭隧道
             </button>
           </div>
-          <p class="small muted">
-            地址在重新启动隧道后会变化，需要重新扫码。流量经 Cloudflare
-            转发；管理页不会公开。
-          </p>
+          <p id="tunnel-hint" class="small muted"></p>
         </section>
         <section class="card devices-card">
           <div class="section-heading">
@@ -102,6 +99,9 @@
             <span id="device-count" class="pill">0 台</span>
           </div>
           <div id="devices"></div>
+          <p class="small muted">
+            这里是设备授权记录。旧的临时网址失效后，设备仍会显示在列表中；请在当前地址重新配对。
+          </p>
         </section>
         <section class="card details-card">
           <h3>会话仍在你的电脑上</h3>

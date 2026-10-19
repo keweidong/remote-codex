@@ -21,6 +21,13 @@ export function error(message, statusCode = 400) {
 export function equalSecret(a, b) {
   return timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
 }
+// Recorded only to explain a dead pairing in the admin list; built server side
+// from the request host, never taken from a request body.
+export function sanitizeOrigin(value) {
+  if (typeof value !== "string") return "";
+  const origin = value.trim().slice(0, 200);
+  return /^(https?):\/\/[\w.\-:\[\]]{1,180}$/i.test(origin) ? origin : "";
+}
 export function saveJson(path, value) {
   const temp = path + ".tmp";
   writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600 });
@@ -46,7 +53,7 @@ export class AuthStore {
     this.grant = { hash: hash(token), expiresAt };
     return { token, expiresAt };
   }
-  pair(token, name) {
+  pair(token, name, baseUrl = "") {
     if (
       typeof token !== "string" ||
       token.length > 128 ||
@@ -67,6 +74,7 @@ export class AuthStore {
       createdAt: this.now(),
       lastSeen: this.now(),
       expiresAt: this.now() + 30 * 86400000,
+      baseUrl: sanitizeOrigin(baseUrl),
       hash: hash(secret),
     };
     this.devices.push(device);

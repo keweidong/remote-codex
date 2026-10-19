@@ -58,11 +58,20 @@ function render(data) {
   lastTunnelUrl = data.tunnel.url;
   addressHint();
   const t = data.tunnel;
+  $("tunnel-description").textContent = t.fixed
+    ? t.autostart
+      ? "已配置固定域名；启动电脑服务时会自动连接 Cloudflare 隧道。"
+      : "已配置固定域名；点击下方按钮连接 Cloudflare 隧道。"
+    : "手机不在同一 Wi-Fi 时，可以开启临时 Cloudflare 隧道。";
+  $("tunnel-hint").textContent = t.fixed
+    ? "固定域名重启后不变。首次改用此域名时请重新扫码，之后保持电脑服务运行即可继续使用。流量经 Cloudflare 转发；管理页不会公开。"
+    : "临时地址在重新启动隧道后会变化，需要重新扫码。流量经 Cloudflare 转发；管理页不会公开。";
   $("tunnel-state").textContent =
     {
       stopped: "未开启",
       starting: "启动中",
-      running: "隧道已启动",
+      running: t.fixed ? "固定隧道已连接" : "隧道已启动",
+      reconnecting: "正在重新连接",
       error: "启动失败",
     }[t.status] || t.status;
   $("tunnel-state").className =
@@ -70,19 +79,23 @@ function render(data) {
   $("tunnel-url").textContent = t.url || "开启后显示公网地址";
   $("tunnel-error").textContent = t.error || "";
   $("start-tunnel").disabled =
-    t.status === "starting" || t.status === "running" || !t.available;
+    ["starting", "running", "reconnecting"].includes(t.status) || !t.available;
   $("start-tunnel").textContent =
-    t.status === "starting" ? "等待 Cloudflare…" : "开启外网访问";
+    t.status === "starting" || t.status === "reconnecting"
+      ? "等待 Cloudflare…"
+      : t.fixed
+        ? "连接固定域名"
+        : "开启外网访问";
   $("stop-tunnel").classList.toggle(
     "hidden",
-    !["starting", "running"].includes(t.status),
+    !["starting", "running", "reconnecting"].includes(t.status),
   );
   if (!t.available)
     $("tunnel-error").textContent =
       "尚未找到 cloudflared。配置 CLOUDFLARED_PATH 后重启本服务。";
   $("device-count").textContent = data.devices.length + " 台";
   const deviceSignature = JSON.stringify(
-    data.devices.map((d) => [d.id, d.name, Math.floor(d.lastSeen / 60000)]),
+    data.devices.map((d) => [d.id, d.name, d.baseUrl, Math.floor(d.lastSeen / 60000)]),
   );
   if ($("devices").dataset.signature !== deviceSignature) {
     $("devices").dataset.signature = deviceSignature;
@@ -96,7 +109,8 @@ function render(data) {
       name.textContent = device.name;
       detail.className = "small muted";
       detail.textContent =
-        "最近访问 " + new Date(device.lastSeen).toLocaleString("zh-CN");
+        "最近访问 " + new Date(device.lastSeen).toLocaleString("zh-CN") +
+        (device.baseUrl ? " · 配对地址 " + device.baseUrl : "");
       copy.append(name, detail);
       const button = document.createElement("button");
       button.className = "danger-button";
@@ -126,8 +140,11 @@ function render(data) {
 }
 function addressHint() {
   const url = $("base-url").value;
-  $("address-hint").textContent = url.includes("trycloudflare.com")
-    ? "手机可使用流量或其他 Wi-Fi，公网访问须先配对。"
+  $("address-hint").textContent =
+    status?.tunnel?.fixed && url === status.tunnel.url
+    ? "固定域名可用手机流量访问；在此地址配对一次后，重启服务仍可使用。"
+    : url.includes("trycloudflare.com")
+      ? "手机可使用流量或其他 Wi-Fi；临时地址重启后需重新配对。"
     : url.includes("127.0.0.1")
       ? "这个地址只用于电脑预览。手机请选局域网地址或开启外网访问。"
       : "手机与电脑需在同一网络，并允许 Windows 防火墙访问 TCP 8766 端口。";
