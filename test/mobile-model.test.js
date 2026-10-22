@@ -11,7 +11,7 @@ function mobile(fetchImpl, storage = new Map()) {
   const makeNode = () => {
     const classes = new Set();
     return {
-      value: "", textContent: "", disabled: false, open: false, children: [],
+      value: "", textContent: "", disabled: false, open: false, children: [], style: {}, scrollHeight: 72,
       classList: {add: (...xs) => xs.forEach(x => classes.add(x)), remove: (...xs) => xs.forEach(x => classes.delete(x)), contains: x => classes.has(x), toggle(x, on) { if (on ?? !classes.has(x)) classes.add(x); else classes.delete(x); }},
       replaceChildren(...xs) { this.children = xs; }, append(...xs) { this.children.push(...xs); }, add(x) { this.children.push(x); },
       showModal() { this.open = true; }, close() { this.open = false; }, after() {}, setAttribute() {}, focus() {}, replaceWith() {},
@@ -33,7 +33,7 @@ function mobile(fetchImpl, storage = new Map()) {
   };
   const context = vm.createContext({
     createApiClient, SubmissionTracker,
-    document: {getElementById: get, createElement: makeNode, body: makeNode(), hidden: false},
+    document: {getElementById: get, createElement: makeNode, createElementNS: makeNode, body: makeNode(), hidden: false},
     sessionStorage: {getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k)},
     location: {hash: "", pathname: "/"}, URLSearchParams, crypto: webcrypto,
     Option: function(text, value) { return {text, value}; },
@@ -246,4 +246,42 @@ test("API accepts started confirmations while rejecting incomplete results", asy
   assert.equal((await api("/api/threads/chat/messages", {method: "POST"})).status, "started");
   const invalid = createApiClient({fetchImpl: async () => Response.json({status: "started"})});
   await assert.rejects(invalid("/api/threads/chat/messages", {method: "POST"}), /未确认/);
+});
+
+test("collapsed settings summary reflects selected model and effort without changing actual metadata", async () => {
+  const f = fixture(); const ui = mobile(f.fetchImpl);
+  await ui.run("loadModels()");
+  ui.run('selected = "chat"');
+  await ui.run("loadChat()");
+  assert.match(ui.get("model-summary").textContent, /model-a/);
+  ui.get("model-select").value = "model-b"; ui.get("model-select").onchange();
+  ui.get("effort-select").value = "xhigh"; ui.get("effort-select").onchange();
+  assert.match(ui.get("model-summary").textContent, /Model B/);
+  assert.match(ui.get("model-summary").textContent, /Extra high/);
+  assert.match(ui.get("thread-meta").textContent, /model-a/);
+});
+
+test("composer grows to a bounded height and resets after sending or switching drafts", async () => {
+  const f = fixture(); const ui = mobile(f.fetchImpl);
+  ui.run('selected = "one"');
+  const input = ui.get("message-input");
+  input.value = "a long draft"; input.scrollHeight = 500;
+  input.oninput();
+  assert.equal(input.style.height, "144px");
+  input.scrollHeight = 46;
+  await ui.run('send("a long draft")');
+  assert.equal(input.value, "");
+  assert.equal(input.style.height, "46px");
+  input.value = "saved draft";
+  await ui.run('selectThread("two"); loadChat()');
+  assert.equal(input.value, "");
+  await ui.run('selectThread("one"); loadChat()');
+  assert.equal(input.value, "saved draft");
+});
+
+test("progress messages have a distinct presentation while retaining safe text rendering", () => {
+  const ui = mobile(fixture().fetchImpl);
+  const node = ui.run('messageNode({role: "assistant", phase: "commentary", text: "<script>unsafe</script>", createdAt: 1000})');
+  assert.match(node.className, /commentary/);
+  assert.equal(node.children[1].children[0].textContent, "<script>unsafe</script>");
 });

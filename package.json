@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "cloudflared": "^0.7.3",
     "qrcode": "1.5.4"
   }
 }

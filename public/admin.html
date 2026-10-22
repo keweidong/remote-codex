@@ -89,6 +89,19 @@
             </button>
           </div>
           <p id="tunnel-hint" class="small muted"></p>
+          <div id="relay-row" class="hidden">
+            <h3>
+              公网固定地址（中继）
+              <span id="relay-state" class="status">等待隧道</span>
+            </h3>
+            <div id="relay-url" class="tunnel-address">
+              中继可用后，外网地址固定不变
+            </div>
+            <p id="relay-error" class="error-text"></p>
+            <p class="small muted">
+              中继把临时隧道映射到固定子域：手机书签和配对跨服务重启有效，双方都不需要申请域名。
+            </p>
+          </div>
         </section>
         <section class="card devices-card">
           <div class="section-heading">

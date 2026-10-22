@@ -1,48 +1,158 @@
-# Codex Pocket / Codex Remote Web
+# Codex Remote Web
 
-本机 Codex Desktop 的非官方手机伴侣。手机可以在已有项目中新建会话、查看历史和记录状态、发送消息、继续任务。沿用电脑当前的 Codex API 配置。
+Codex Remote Web 是一个运行在本机的非官方手机伴侣。它读取电脑上 Codex Desktop 的项目、会话和历史记录，让你在手机上查看进度、发送消息、继续任务，或在已有本地项目中创建新会话。
 
-## 使用
+会话仍由这台电脑上的 Codex 处理。这个项目不提供云端 Codex 账号、不保存聊天到作者的服务器，也不修改 Codex 的配置、数据库或锁文件。
 
-1. 保持 Codex Desktop 运行。双击 `Start-Codex-Remote.cmd`，打开电脑管理页。
-2. 同一 Wi-Fi：选择电脑的局域网地址，点“生成配对二维码”。手机扫码，在网页里确认设备名称并配对。如果 Windows 提示网络访问，请只允许你使用的受信任网络；默认手机端口为 TCP 8766。
-3. 不同网络：若已配置固定域名，启动服务会自动连接隧道；在管理页选择 `https://codexremote.dpdns.org` 并生成二维码。未配置固定域名时，可点“开启外网访问”使用临时 `https://…trycloudflare.com` 地址。
-4. 手机上点“＋ 新建会话”，选择已有本地项目并填写首条消息，点“创建并发送”后自动进入新会话。也可以打开已有聊天，发送消息或点“继续任务”。已有聊天中的“已提交”代表 Codex 已确认排队。
-   输入框上方与新建会话弹窗均可选择“模型”和“推理强度”。默认沿用当前会话/电脑配置；选择其他模型时使用该模型支持的强度，点击发送或继续后应用。切换下拉框本身不会改动正在执行的任务。
-5. 在电脑管理页撤销不再使用的设备。双击 `Stop-Codex-Remote.cmd` 可停止服务及它启动的隧道。
+## 功能
 
-局域网二维码里的地址不能是 `127.0.0.1`。那个选项仅供本机预览。若本机有多个网卡，请选手机所在网络能访问的 IP。
+- 查看本机项目、已有会话、消息历史和记录状态。
+- 在已有本地项目中创建持久会话，并发送首条消息。
+- 向已有会话发送消息或继续任务，提交结果会明确显示为“已提交”或“已开始”。
+- 从本机 Codex 的模型目录读取可用模型和推理强度，在发送或创建会话时选择。
+- 通过局域网二维码配对手机，也可以使用 Cloudflare 临时隧道或固定域名隧道。
+- 公网固定地址（中继）：临时隧道自动注册到中继 Worker，手机扫一次码即可跨服务重启使用，被分享者不需要申请域名。
+- 在电脑管理页查看已配对设备、生成新的二维码、撤销设备和关闭隧道。
 
-## 范围与限制
+## 运行结构
 
-- 支持在已有本地项目中新建持久会话，包含尚无聊天的项目。通过官方 App Server 的 `thread/start` 绑定项目，再用 `turn/start` 执行首条消息；服务不直接修改 Codex 配置、历史、数据库或锁文件。
-- 新建会话与桌面须使用同一个 `CODEX_HOME`。创建时核验桌面可见来源（`vscode` / `cli`）和项目 ID，并兼容桌面旧项目 ID 的迁移映射。记录同步可能稍有延迟，桌面未立即出现时可刷新项目列表。
-- 首轮由本机 App Server 子进程执行，沿用当前配置，到本轮结束后关闭。手机不处理交互审批；服务不会自动同意审批请求，需要时回到电脑继续。停止远程服务会停止尚在执行的首轮任务。新建成功仅表示会话和首条消息已确认，不表示任务已完成。
-- 创建时断网会保留首条消息和请求标识，在同一手机标签页刷新后重试原文也不会重复创建；若明确提示状态未知，请先检查会话列表或桌面。
-- 使用官方 `codex queue` 提交新消息，保持桌面当前会话的执行归属；队列消息不代表已开始执行。若一直没有回复，请在桌面打开目标会话并检查是否等待审批。
-- 显式选择模型或强度时，使用官方 App Server 配置与排队接口；先确认设置，再提交消息。模型设置用于该会话后续轮次，可能影响并发排队的其他消息，不是每条消息独立的永久模型快照。它不修改全局模型配置或 API 凭据。
-- 若已有会话被 Codex Desktop 占用，手机不能跨进程强行切换其模型，本次指定模型的消息会被拒绝且保留输入。可在桌面切换模型，或在手机新建会话；“沿用会话设置”仍可正常排队。已有待处理队列时需先处理队列，再指定模型。手机接管的会话在队列处理完、空闲后释放。
-- 模型目录实时来自本机 `model/list`，缓存 5 分钟；强度选项按模型提供的能力生成。目录暂不可用时仍可沿用设置发送。列表不表示已对每个模型进行计费调用测试。
-- 指定模型的现有会话和手机新建首轮由本服务启动的 App Server 执行，服务停止会结束这些尚在运行的任务；仍不自动同意工具审批。
-- v0.1 不支持手机处理命令审批、强制中断、删除聊天或任意终端执行。
-- 状态来源于 Codex 已保存的记录，可能延迟或在异常退出后保留“执行中”；不能把它当作进程存活证明。
-- 聊天只展示用户文字、助手回复/进展与简短活动状态；不显示原始推理、工具参数、工具输出、文件附件或完整 diff。
-- 历史读取依赖本机 `state_5.sqlite` / `thread_history_1.sqlite` 当前结构，新建使用 App Server 的实验项目字段。此版按 Codex CLI `0.162.0-alpha.17.2` 和当前 Desktop 数据结构实现；客户端升级可能需要适配。
-- 临时隧道地址重启后会变化，需要重新配对。固定域名保持不变；首次从临时地址切换到固定域名时需要在新地址重新配对一次，此后同一浏览器的授权可跨重启使用，直到到期或撤销。“已配对设备”保存的是授权记录，不表示旧网址仍然可达。此版本没有作者中继、后台遥测或云端消息存储；公网访问使用 Cloudflare 服务。
-- 本机默认读取 DSH 安装的 cloudflared，可通过 `CLOUDFLARED_PATH` 改为自己的独立程序路径。不会修改 DSH 文件。
+服务启动两个 HTTP 监听器：
 
-## 本机数据与配置
+| 入口 | 默认地址 | 用途 |
+| --- | --- | --- |
+| 电脑管理页 | `http://127.0.0.1:8765` | 仅本机登录、配对、设备和隧道管理 |
+| 手机入口 | `http://0.0.0.0:8766` | 局域网或隧道访问的手机页面与 API |
 
-默认管理地址 `http://127.0.0.1:8765`，只监听本机；手机入口监听 `0.0.0.0:8766`，全部私有 API 都要求配对。外网隧道只发布手机端口，管理路由不在手机服务上。
+管理页不会出现在手机监听器上。Cloudflare 隧道只转发手机端口，不转发管理页。
 
-运行数据位于 `%LOCALAPPDATA%\CodexRemoteWeb`：本机管理凭据、设备凭据哈希、提交防重记录和运行日志。日志不记录聊天正文。配对码 5 分钟单次有效，设备会话 30 天有效；新二维码使旧二维码失效，撤销设备立即阻止后续请求。不同浏览器需要单独配对。
+已有会话的消息通过官方 `codex queue` 提交，并使用 `shell: false` 启动命令；新会话通过官方 `codex app-server --stdio` 调用 `thread/start` 和 `turn/start`。Codex 的 SQLite 状态和历史文件以只读方式打开，服务不会直接写入 Codex 数据库、历史或锁文件。
 
-使用固定域名时，先在 Cloudflare Tunnel 的 Public Hostname 中把域名指向 `http://127.0.0.1:8766`，然后在 `%LOCALAPPDATA%\CodexRemoteWeb\tunnel.json` 保存 `{"hostname":"codexremote.dpdns.org","token":"<Cloudflare Tunnel Token>","autostart":true}`。Token 是隧道凭据，请勿公开。电脑服务和 `cloudflared` 仍须运行；固定域名不等于云端托管 Codex。
+## 环境要求
 
-可选环境变量：`CODEX_HOME`、`CODEX_CLI_PATH`、`CLOUDFLARED_PATH`、`CODEX_REMOTE_DATA`、`CODEX_REMOTE_ADMIN_PORT`、`CODEX_REMOTE_PHONE_PORT`、`CODEX_REMOTE_HOST`（默认 `0.0.0.0`；填 `127.0.0.1` 可仅供隧道访问）。
+- Windows，PowerShell 和 Node.js **24 或更高版本**。
+- 已安装并登录 Codex Desktop，且本机可以找到 `codex.exe`。
+- 手机与电脑在同一网络时，需要允许受信任网络访问 TCP `8766`。
+- 使用外网访问时需要 `cloudflared`：依赖的 npm 包会在安装时自动下载对应平台的二进制（约 55 MB，仅一次）；用 `--ignore-scripts` 安装时由服务在首次启动时后台补下载。也可以用 `CLOUDFLARED_PATH` 指定自己的副本。
 
-## 开发和验证
+服务与 Codex Desktop 必须使用同一个 `CODEX_HOME`。默认值为 `%USERPROFILE%\.codex`。
 
-需要 Node.js 24+。运行 `npm.cmd install --ignore-scripts`，然后 `npm.cmd test`。直接运行 `npm.cmd start` 不会自动打开管理凭据链接，日常使用启动脚本。
+## 快速开始
 
-测试使用临时 SQLite 数据库和受控 CLI fixture 验证配对、撤销、CSRF、管理入口隔离、历史过滤/分页、无 shell 消息提交、新会话创建与防重、启动超时和首轮进程生命周期。真实数据检查只读，不自动向用户现有会话插入测试消息。实际手机网络和公网隧道效果需在用户设备上完成扫码确认。
+```powershell
+# 安装依赖
+npm.cmd install --ignore-scripts
+
+# 启动服务并打开电脑管理页
+.\Start-Codex-Remote.cmd
+```
+
+启动脚本会检查 Node.js 版本，查找 Codex CLI，按需安装依赖，并将运行日志写入 `%LOCALAPPDATA%\CodexRemoteWeb`。管理页打开后：
+
+1. 在“选择手机能访问的地址”中选择电脑的局域网地址。
+2. 点击“生成配对二维码”，用手机浏览器扫描并填写设备名称。
+3. 配对完成后选择项目和会话，即可查看历史、发送消息或继续任务。
+
+二维码 5 分钟内有效且只能使用一次。`127.0.0.1` 仅供电脑本机预览，不能填入手机二维码。
+
+停止服务（包括由本服务启动的隧道）：
+
+```powershell
+.\Stop-Codex-Remote.cmd
+```
+
+也可以直接运行 `npm.cmd start` 启动 Node 服务；这种方式不会自动打开带管理凭据的浏览器链接，日常使用建议使用启动脚本。
+
+## 外网访问
+
+### 临时地址
+
+在电脑管理页点击“开启外网访问”。服务会启动 Cloudflare Quick Tunnel，并显示一个 `https://…trycloudflare.com` 地址；选择该地址重新生成二维码。临时地址在服务重启后会变化，需要重新配对。
+
+### 公网固定地址（中继，默认开启）
+
+临时隧道运行后，服务会自动把当前隧道地址注册到项目中继（部署在你自己 Cloudflare 账户上的 Worker，部署与原理见 `relay/README.md`），并把二维码建在固定源 `https://<id>.codexremote.dpdns.org` 上：
+
+- 手机用固定地址配对一次后，服务重启、隧道更换都不需要重新扫码；实例离线时手机看到友好的离线页而不是死链。
+- 每台实例的 id 与注册密钥首次运行自动铸造，保存在数据目录 `relay-identity.json`；密钥只以 SHA-256 哈希存在中继侧。
+- 中继不可达时自动回退为裸临时地址（上一节行为），不影响局域网和隧道功能。
+- 中继只改变访问源，不终结配对；但经过 Worker 的流量对中继运营者的 Cloudflare 账户可见（与 Cloudflare 之于 trycloudflare 的可见性相同），分享给他人前请如实说明。
+- 用 `CODEX_REMOTE_RELAY=0` 或数据目录 `relay.json` 写入 `{"enabled":false}` 关闭；`CODEX_REMOTE_RELAY_BASE`、`CODEX_REMOTE_RELAY_DOMAIN` 可指向其他中继部署。
+
+### 固定域名
+
+先在 Cloudflare Tunnel 的 Public Hostname 中把域名指向 `http://127.0.0.1:8766`，再在 `%LOCALAPPDATA%\CodexRemoteWeb\tunnel.json` 写入：
+
+```json
+{
+  "hostname": "remote.example.com",
+  "token": "<Cloudflare Tunnel Token>",
+  "autostart": true
+}
+```
+
+也可以使用环境变量 `CODEX_REMOTE_TUNNEL_HOSTNAME`、`CODEX_REMOTE_TUNNEL_TOKEN`、`CODEX_REMOTE_TUNNEL_MODE` 和 `CODEX_REMOTE_TUNNEL_AUTOSTART` 配置。Token 是隧道凭据，请勿提交到 Git 或发给他人。固定域名隧道自动重连，手机授权可以跨服务重启保留；首次从临时地址切换到固定域名时，需在新地址重新配对一次。
+
+## 配置项
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_HOME` | `%USERPROFILE%\.codex` | Codex 数据目录 |
+| `CODEX_CLI_PATH` | 自动查找 | `codex.exe` 的完整路径 |
+| `CLOUDFLARED_PATH` | npm 包自动下载 | `cloudflared.exe` 的完整路径 |
+| `CODEX_REMOTE_DATA` | `%LOCALAPPDATA%\CodexRemoteWeb` | 本服务的运行数据和日志目录 |
+| `CODEX_REMOTE_ADMIN_PORT` | `8765` | 本机管理端口 |
+| `CODEX_REMOTE_PHONE_PORT` | `8766` | 手机入口端口 |
+| `CODEX_REMOTE_HOST` | `0.0.0.0` | 手机入口监听地址；填 `127.0.0.1` 可只供隧道访问 |
+| `CODEX_REMOTE_TUNNEL_HOSTNAME` | 无 | 固定隧道域名 |
+| `CODEX_REMOTE_TUNNEL_TOKEN` | 无 | 固定隧道 Token |
+| `CODEX_REMOTE_TUNNEL_MODE` | 自动选择 | 填 `quick` 强制使用临时隧道 |
+| `CODEX_REMOTE_TUNNEL_AUTOSTART` | 配置文件值 | 固定隧道是否随服务启动 |
+| `CODEX_REMOTE_RELAY` | 开启 | 填 `0` 关闭公网固定地址中继 |
+| `CODEX_REMOTE_RELAY_BASE` | `https://registry.codexremote.dpdns.org` | 中继注册表地址 |
+| `CODEX_REMOTE_RELAY_DOMAIN` | 从注册表地址推导 | 实例固定子域的基础域 |
+
+## 本地数据和安全边界
+
+默认运行目录为 `%LOCALAPPDATA%\CodexRemoteWeb`，包含：
+
+- `admin-key`：电脑管理页的本机启动凭据。
+- `devices.json`：设备授权记录，只保存设备 Token 的哈希值。
+- `outbox.json`、`new-threads.json`：提交和新会话请求的防重复记录。
+- `relay.json`（可选）、`relay-identity.json`：中继配置，以及本实例的固定子域 id 与注册密钥。
+- `tunnel.json`、`runtime.json`、`stdout.log`、`stderr.log`：隧道配置、运行状态和日志。
+
+管理凭据只接受本机地址。配对码为一次性随机值，有效期 5 分钟；设备会话有效期 30 天，最多保留 10 台设备，撤销后立即失效。修改请求要求同源 `Origin` 和 JSON 内容类型，管理端口不会通过隧道公开。
+
+请保护 `admin-key` 和 `tunnel.json`。固定隧道 Token 是 bearer credential，泄露后应立即在 Cloudflare 中轮换。`relay-identity.json` 的密钥能把你的固定子域指向别人的隧道；怀疑泄露时删除该文件并重启，实例会铸造新 id（手机需重扫一次）。
+
+## 当前限制
+
+- 手机端不处理命令审批，不支持强制中断、删除聊天、任意终端执行或文件附件。
+- 历史页只展示用户文字、助手回复、简短活动状态和记录状态；不展示原始推理、工具参数、工具输出或完整 diff。
+- 状态来自 Codex 已保存的记录，可能有延迟或在异常退出后暂时保留“执行中”。“已提交”表示已进入桌面队列，不代表任务已经完成。
+- 若桌面正在占用某个会话，手机不能跨进程强制切换该会话的模型；可以在桌面切换，或在手机创建新会话。模型目录暂不可用时仍可沿用会话或默认设置发送。
+- 新会话首轮由本服务启动的 App Server 子进程执行；停止本服务会停止仍在执行的首轮任务。新建确认只表示会话和首条消息已被确认，不表示任务完成。
+- 当前实现依赖本机 Codex CLI `0.162.0-alpha.17.2` 附近的数据结构和 App Server 接口；升级 Codex 后可能需要适配。公网访问和真实手机扫码需要在目标设备上自行验证。
+
+## 开发与验证
+
+安装依赖后运行测试：
+
+```powershell
+npm.cmd install --ignore-scripts
+npm.cmd test
+```
+
+测试使用临时 SQLite 数据和受控 CLI fixture，覆盖配对过期与撤销、设备凭据哈希、未授权拒绝、管理入口隔离、同源校验、历史读取与分页、shell 安全的消息提交、幂等重试、新会话创建、模型目录和 App Server 生命周期。测试不会向你的真实 Codex 会话插入消息。
+
+## 目录
+
+```text
+src/        Node.js 服务、只读 Codex store、队列、配对、隧道和中继客户端
+public/     管理页和手机端静态页面
+relay/      公网固定地址中继 Worker、wrangler 配置与部署指南
+test/       Node.js 内置测试与受控 fixtures
+docs/       设计说明和实现计划
+start.ps1   启动服务、检查依赖并打开管理页
+stop.ps1    通过本机管理接口停止服务
+```

@@ -15,6 +15,8 @@ const capabilities = {
   create: true,
   continue: true,
   interrupt: false,
+  steer: false,
+  queueResume: false,
   approvals: false,
   statusSource: "persisted-history",
   modelSelection:true,
@@ -45,10 +47,13 @@ function setCookie(
     `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`,
   );
 }
-function requireOrigin(req) {
+function requireOrigin(req, extraOrigins = []) {
   const origin = req.headers.origin,
     host = req.headers.host;
-  if (!origin || ![`http://${host}`, `https://${host}`].includes(origin))
+  if (
+    !origin ||
+    ![`http://${host}`, `https://${host}`, ...extraOrigins].includes(origin)
+  )
     throw error("请求来源无效，请刷新当前页面后重试。", 403);
   if (
     !(req.headers["content-type"] || "")
@@ -84,13 +89,16 @@ export function createApp({
   queue,
   creator,
   models,
+  controls,
   dataDir,
   adminToken,
   cloudflaredPath,
   cloudflaredPrefixArgs = [],
+  relay = null,
   onShutdown,
 }) {
   const auth = new AuthStore({ dataDir });
+  const appCapabilities = {...capabilities, interrupt: !!controls, steer: !!controls, queueResume: !!controls};
   const adminSessions = new Map(),
     limits = new Map();
   let adminPort,
@@ -121,6 +129,14 @@ export function createApp({
             lanUrls.push(`http://${item.address}:${phonePort}`);
     return { localUrl, lanUrls: [...new Set(lanUrls)] };
   }
+  // A relayed phone is served from the stable instance origin, so mutating
+  // requests carry that Origin while the wire Host is the trycloudflare
+  // target; the same-origin check must accept exactly our own relay origin.
+  const relayOrigins = () => (relay ? relay.allowedOrigins() : []);
+  const relaySnapshot = () =>
+    relay
+      ? relay.snapshot()
+      : { status: "disabled", url: "", error: "", configured: false, base: "", domain: "" };
   function admin(req) {
     const token = cookie(req, "crw_admin");
     if (
@@ -205,8 +221,9 @@ export function createApp({
               phonePort,
               ...bases(),
               tunnel: tunnel.snapshot(),
+              relay: relaySnapshot(),
               devices: auth.list(),
-              capabilities,
+              capabilities: appCapabilities,
             });
           if (!["POST", "DELETE"].includes(req.method))
             throw error("接口不存在。", 404);
@@ -217,6 +234,7 @@ export function createApp({
               bases().localUrl,
               ...bases().lanUrls,
               tunnel.snapshot().url,
+              relay ? relay.runningUrl() : "",
             ].filter(Boolean);
             if (!allowed.includes(input.baseUrl))
               throw error("请选择当前可用的访问地址。");
@@ -264,17 +282,28 @@ export function createApp({
         // The mobile listener never contains management endpoints or admin assets.
         if (!path.startsWith("/api/")) throw error("接口不存在。", 404);
         if (path === "/api/pair" && req.method === "POST") {
-          requireOrigin(req);
+          requireOrigin(req, relayOrigins());
           rate("pair:" + req.socket.remoteAddress);
           const input = await body(req);
           // Remember which address this phone paired through, so the admin list
           // can say why a device stopped working after the address changed.
           const proto =
             req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+          // Through the relay the wire Host is the trycloudflare target; the
+          // device list should record the stable instance origin the phone
+          // actually bookmarked, which the Worker echoes in X-Forwarded-Host.
+          const relayHost = relay ? relay.runningHost() : "";
+          const forwardedHost = String(
+            req.headers["x-forwarded-host"] || "",
+          ).slice(0, 200);
+          const recordHost =
+            relayHost && forwardedHost.toLowerCase() === relayHost
+              ? relayHost
+              : (req.headers.host || "").slice(0, 200);
           const paired = auth.pair(
             input.token,
             input.name,
-            `${proto}://${(req.headers.host || "").slice(0, 200)}`,
+            `${proto}://${recordHost}`,
           );
           setCookie(res, "crw_device", paired.token, {
             secure: req.headers["x-forwarded-proto"] === "https",
@@ -284,7 +313,7 @@ export function createApp({
         const paired = device(req);
         rate("device:" + paired.id, 240);
         if (req.method === "GET" && path === "/api/session")
-          return json(res, 200, { device: paired, capabilities });
+          return json(res, 200, { device: paired, capabilities: appCapabilities });
         if(req.method==='GET'&&path==='/api/models'){
           if(!models)throw error('模型目录服务暂不可用，请在电脑重启服务。',503);
           return json(res,200,await models.list());
@@ -300,7 +329,7 @@ export function createApp({
           });
         const projectMatch = path.match(/^\/api\/projects\/([^/]+)\/threads$/);
         if (projectMatch && req.method === "POST") {
-          requireOrigin(req);
+          requireOrigin(req, relayOrigins());
           if (!creator) throw error("新建会话暂不可用，请在电脑重启服务。", 503);
           const input = await body(req);
           return json(res, 201, await creator.create({
@@ -311,6 +340,34 @@ export function createApp({
             model:input?.model,
             effort:input?.effort,
           }));
+        }
+        const controlMatch = path.match(/^\/api\/threads\/([a-zA-Z0-9_-]{1,128})\/(control|steer|interrupt|queue\/resume)$/);
+        if (controlMatch) {
+          const [, threadId, action] = controlMatch;
+          if (action === "control" && req.method === "GET") {
+            store.requireThread(threadId);
+            return json(res, 200, controls ? await controls.status(threadId) : {
+              available: false, state: "unavailable", source: null, turnId: null,
+              canInterrupt: false, canSteer: false, reason: "控制服务未启用，请在电脑重启服务。",
+            });
+          }
+          if (action !== "control" && req.method === "POST") {
+            requireOrigin(req, relayOrigins());
+            rate("control:" + paired.id, 30);
+            store.requireThread(threadId);
+            const input = await body(req);
+            if (!input || typeof input !== "object" || Array.isArray(input) ||
+              input.model !== undefined || input.effort !== undefined ||
+              (action === "queue/resume" && (input.text !== undefined || input.turnId !== undefined)))
+              throw Object.assign(error("控制请求格式无效，引导不能同时切换模型设置。"), {notSubmitted: true});
+            if (!controls) throw Object.assign(error("控制服务未启用，请在电脑重启服务。", 503), {notSubmitted: true});
+            return json(res, 200, await controls.act({
+              action: action === "queue/resume" ? "resumeQueue" : action,
+              threadId, text: input.text, turnId: input.turnId, queuedSubmissionId: input.queuedSubmissionId,
+              requestId: input.requestId, deviceId: paired.id,
+            }));
+          }
+          throw error("接口不存在。", 404);
         }
         const match = path.match(
           /^\/api\/threads\/([a-zA-Z0-9_-]{1,128})(\/messages)?$/,
@@ -326,7 +383,7 @@ export function createApp({
             }),
           );
         if (match && match[2] && req.method === "POST") {
-          requireOrigin(req);
+          requireOrigin(req, relayOrigins());
           const input = await body(req);
           return json(
             res,
@@ -342,7 +399,7 @@ export function createApp({
           );
         }
         if (path === "/api/logout" && req.method === "POST") {
-          requireOrigin(req);
+          requireOrigin(req, relayOrigins());
           await body(req);
           auth.revoke(paired.id);
           setCookie(res, "crw_device", "", { maxAge: 0 });
@@ -359,6 +416,7 @@ export function createApp({
             ? e.message
             : "服务读取失败，请在电脑上检查运行状态。",
           ...(e.notSubmitted===true?{notSubmitted:true}:{}),
+          ...(e.controlUnknown===true?{controlUnknown:true}:{}),
         });
       }
     };
@@ -374,6 +432,20 @@ export function createApp({
   }
   return {
     auth,
+    /**
+     * Called after the background cloudflared download lands: a fixed-domain
+     * tunnel whose boot autostart was skipped (binary absent at that moment)
+     * reconnects here without a service restart.
+     */
+    retryAutostart() {
+      if (
+        tunnel &&
+        !tunnel.child &&
+        !tunnel.retryTimer &&
+        tunnel.shouldAutostart()
+      )
+        tunnel.start();
+    },
     async start(options = {}) {
       phoneHost = options.phoneHost || "0.0.0.0";
       const adminServer = createServer(handler("admin")),
@@ -410,6 +482,9 @@ export function createApp({
         dataDir,
         config: loadTunnelConfig(dataDir),
         prefixArgs: cloudflaredPrefixArgs,
+        onUrl: (url) => {
+          if (relay) relay.onTunnelUrl(url);
+        },
       });
       // A fixed hostname never changes, so restoring it at boot is exactly what
       // keeps an existing pairing usable. A random quick-tunnel URL is never
@@ -426,7 +501,8 @@ export function createApp({
       stopPromise=(async()=>{
         const listeners=servers.map(s=>new Promise(resolve=>{s.close(()=>resolve());s.closeIdleConnections();}));
         tunnel?.stop();
-        await Promise.all([queue?.stop?.(),creator?.stop(),models?.stop?.()]);
+        relay?.stop();
+        await Promise.all([queue?.stop?.(),creator?.stop(),models?.stop?.(),controls?.stop?.()]);
         await Promise.all(listeners);
       })();
       return stopPromise;

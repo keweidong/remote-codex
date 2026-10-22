@@ -6,12 +6,25 @@
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover"
     />
-    <meta name="theme-color" content="#121715" />
+    <meta name="theme-color" content="#171719" />
     <title>Codex Pocket · 手机会话</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body class="phone-page">
+    <!-- Lucide icon data. License notices: docs/licenses/lucide.txt. -->
+    <svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true">
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+      <symbol id="icon-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+      <symbol id="icon-send" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+      <symbol id="icon-continue" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></symbol>
+      <symbol id="icon-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+      <symbol id="icon-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    </svg>
     <section id="pair-screen" class="pair-screen hidden">
       <div class="brand-mark">C<span>↗</span></div>
       <p class="eyebrow">CODEX POCKET</p>
@@ -30,74 +43,64 @@
       </form>
       <p id="pair-error" class="error-text" role="alert"></p>
       <p class="small muted">
-        配对后可以查看、继续和新建会话。授权可随时在电脑管理页撤销。
+        配对后可以查看、继续和新建会话，并对支持控制的执行中轮次插话或停止。授权可随时在电脑管理页撤销。
       </p>
     </section>
-    <div id="workspace" class="workspace hidden">
-      <aside class="chat-sidebar">
+    <div id="workspace" class="workspace sidebar-open hidden">
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭侧栏" tabindex="-1"></button>
+      <aside id="chat-sidebar" class="chat-sidebar" aria-label="项目和会话">
         <header class="sidebar-heading">
-          <div class="brand-mark mini">C<span>↗</span></div>
-          <div>
-            <strong>Codex Pocket</strong>
-            <div class="small muted">你的桌面会话，随身继续</div>
+          <span class="online-dot" aria-hidden="true"></span>
+          <h1>Codex Pocket</h1>
+          <div class="sidebar-actions">
+            <button id="refresh-list" class="icon-button" type="button" title="刷新会话" aria-label="刷新会话"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button>
+            <button id="new-thread" class="icon-button" type="button" title="新建会话" aria-label="新建会话" disabled><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg></button>
+            <button id="sidebar-close" class="icon-button" type="button" title="隐藏侧栏" aria-label="隐藏侧栏"><svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg></button>
           </div>
-          <button
-            id="logout"
-            class="icon-button"
-            title="退出并取消本设备配对"
-            aria-label="取消本设备配对"
-          >
-            ↪
-          </button>
         </header>
-        <div class="new-thread-entry">
-          <button id="new-thread" class="primary wide" type="button" disabled>＋ 新建会话</button>
-        </div>
         <div class="filters">
-          <label class="sr-only" for="project-select">项目</label
-          ><select id="project-select">
-            <option value="">全部项目</option></select
-          ><label class="sr-only" for="search">搜索聊天</label
+          <label class="sr-only" for="search">搜索聊天</label
           ><input
             id="search"
             type="search"
-            placeholder="搜索聊天或项目…"
+            placeholder="搜索会话或项目…"
             autocomplete="off"
           />
         </div>
         <div class="list-label">
-          <span>最近会话</span
-          ><button id="refresh-list" class="text-button">刷新</button>
+          <span>项目</span>
+          <span id="thread-count"></span>
         </div>
         <div id="thread-list" class="thread-list"></div>
         <footer class="sidebar-footer">
-          <span class="online-dot"></span><span id="device-label">已连接</span
-          ><span class="small muted">非官方本地伴侣</span>
+          <span class="online-dot" aria-hidden="true"></span><span id="device-label">已连接</span>
+          <button id="logout" class="icon-button" type="button" title="取消本设备配对" aria-label="取消本设备配对"><svg class="icon" aria-hidden="true"><use href="#icon-logout"/></svg></button>
         </footer>
       </aside>
-      <main class="conversation">
-        <div id="empty-chat" class="empty-chat">
-          <span class="empty-symbol">↗</span>
-          <h2>开始新会话，或继续上次任务</h2>
-          <p class="muted">
-            选择项目后新建会话，或打开已有聊天继续。<br />任务在你的电脑上执行。
-          </p>
-        </div>
-        <div id="chat-content" class="chat-content hidden">
+      <main id="conversation" class="conversation">
           <header class="conversation-heading">
-            <button
-              id="back"
-              class="icon-button mobile-only"
-              aria-label="返回会话列表"
-            >
-              ←
+            <button id="sidebar-toggle" class="icon-button" aria-label="隐藏侧栏" aria-controls="chat-sidebar" aria-expanded="true" title="隐藏侧栏" type="button">
+              <svg class="icon" aria-hidden="true"><use href="#icon-panel"/></svg>
             </button>
             <div class="conversation-title">
-              <strong id="thread-title"></strong>
+              <strong id="thread-title">Codex Pocket</strong>
               <div id="thread-meta" class="small muted"></div>
             </div>
             <span id="thread-status" class="status"></span>
+            <button id="interrupt-turn" class="icon-button hidden" type="button" title="停止当前轮次" aria-label="停止当前轮次" disabled><svg class="icon" aria-hidden="true"><use href="#icon-stop"/></svg></button>
           </header>
+        <div id="empty-chat" class="empty-chat">
+          <h2>Codex Pocket</h2>
+          <p class="muted">选择一个会话</p>
+        </div>
+        <div id="chat-content" class="chat-content hidden">
+          <div id="queue-status" class="queue-status hidden" aria-label="待执行队列" aria-busy="false">
+            <div class="queue-status-row">
+              <span id="queue-summary" role="status"></span>
+              <button id="resume-queue" class="text-button queue-resume" type="button" aria-describedby="queue-reason" disabled><svg class="icon" aria-hidden="true"><use href="#icon-continue"/></svg><span id="queue-resume-label">恢复队列</span></button>
+            </div>
+            <p id="queue-reason" role="status"></p>
+          </div>
           <div id="messages-scroll" class="messages-scroll">
             <button id="load-earlier" class="text-button hidden">
               加载更早的消息
@@ -108,29 +111,34 @@
           <div class="composer-area">
             <p id="chat-notice" class="notice small" role="status"></p>
             <form id="composer">
-              <div class="model-settings">
+              <div class="composer-toolbar">
+              <div class="compose-modes" role="group" aria-label="发送方式">
+                <button id="queue-mode" type="button" aria-pressed="true" title="加入消息队列">排队</button>
+                <button id="steer-mode" type="button" aria-pressed="false" title="正在读取本轮控制状态" disabled>插话</button>
+              </div>
+              <details id="chat-settings" class="chat-settings">
+                <summary title="模型与推理强度"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span id="model-summary">沿用会话设置</span></summary>
+                <div class="model-settings">
                 <label for="model-select">模型<select id="model-select" disabled><option value="">沿用会话 / 默认模型</option></select></label>
                 <label for="effort-select">推理强度<select id="effort-select" disabled><option value="">沿用会话 / 默认强度</option></select></label>
+                </div>
+                <p id="model-notice" class="notice small" role="status">正在读取模型列表…</p>
+              </details>
               </div>
-              <p id="model-notice" class="notice small" role="status">正在读取模型列表…</p>
-              <p class="model-hint small muted">选择将在发送时应用；桌面占用的会话请在桌面切换，或在手机新建会话。</p>
+              <div class="composer-row">
               <label class="sr-only" for="message-input">给 Codex 的消息</label
               ><textarea
                 id="message-input"
-                rows="3"
+                rows="1"
                 maxlength="12000"
                 placeholder="给这个会话发消息…"
               ></textarea>
               <div class="composer-actions">
-                <span class="small muted">在电脑上执行</span
-                ><button id="continue" type="button" class="secondary">
-                  继续任务</button
-                ><button id="send" type="submit" class="primary">发送 ↑</button>
+                <button id="continue" type="button" class="icon-button" title="发送“继续”消息" aria-label="发送“继续”消息"><svg class="icon" aria-hidden="true"><use href="#icon-continue"/></svg></button>
+                <button id="send" type="submit" class="primary icon-button" title="发送消息" aria-label="发送消息"><svg class="icon" aria-hidden="true"><use href="#icon-send"/></svg></button>
+              </div>
               </div>
             </form>
-            <p class="composer-note">
-              状态来自已保存记录，可能稍有延迟。审批和中断请在桌面处理。
-            </p>
           </div>
         </div>
       </main>

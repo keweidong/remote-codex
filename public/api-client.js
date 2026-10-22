@@ -16,13 +16,20 @@ export function createApiClient({
       method === "POST" && /^\/api\/threads\/[^/?]+\/messages$/.test(path);
     const isCreation =
       method === "POST" && /^\/api\/projects\/[^/?]+\/threads$/.test(path);
+    const controlAction = method === "POST"
+      ? path.match(/^\/api\/threads\/[^/?]+\/(steer|interrupt|queue\/resume)$/)?.[1] : null;
     const isHistory =
       method === "GET" && /^\/api\/threads\/[^/?]+(?:\?|$)/.test(path);
     let status = null;
     let contentType = "";
     function failure(phase, reason) {
       const submissionUnknown = (isSubmission || isCreation) && phase !== "http";
-      const prefix = submissionUnknown
+      const controlUnknown = !!controlAction && phase !== "http";
+      const prefix = controlUnknown
+        ? controlAction === "queue/resume"
+          ? "恢复队列结果未确认，请检查队列及执行记录，勿重复操作。"
+          : "控制结果未确认，请先检查当前执行轮，勿重复操作。"
+        : submissionUnknown
         ? isCreation
           ? "新会话创建结果未确认，请先检查会话列表；重试原文会沿用同一请求。"
           : "提交结果未确认，请检查桌面队列，勿重复发送。"
@@ -36,6 +43,7 @@ export function createApiClient({
         method,
         path,
         submissionUnknown,
+        ...(controlAction ? {controlUnknown} : {}),
       });
     }
 
@@ -77,8 +85,19 @@ export function createApiClient({
           : `请求失败${http}。`,
       );
       error.notSubmitted = data.notSubmitted === true;
+      if (controlAction) error.controlUnknown = data.controlUnknown === true;
       throw error;
     }
+    if (
+      controlAction &&
+      (!(controlAction === "steer" ? ["steered"] : controlAction === "queue/resume"
+        ? ["queueStarted"] : ["interrupted", "interruptRequested"]).includes(data.status) ||
+        typeof data.turnId !== "string" || !data.turnId ||
+        typeof data.requestId !== "string" || !data.requestId ||
+        (controlAction === "queue/resume" && (typeof data.queuedSubmissionId !== "string" || !data.queuedSubmissionId ||
+          !["inProgress", "completed", "interrupted", "failed"].includes(data.turnStatus))))
+    )
+      throw failure("response", `服务未返回有效的控制确认${http}。`);
     if (
       isSubmission &&
       (!["queued", "started"].includes(data.status) ||

@@ -22,14 +22,21 @@ export class SubmissionTracker {
   }
   get(threadId, text, makeId, settings = {}) {
     const model = settings.model || "", effort = settings.effort || "";
+    const action = settings.action || "", turnId = settings.turnId || "";
+    const queuedSubmissionId = settings.queuedSubmissionId || "";
     let item = this.items.find(
       (x) => x.threadId === threadId && x.text === text &&
-        (x.model || "") === model && (x.effort || "") === effort,
+        (x.model || "") === model && (x.effort || "") === effort &&
+        (x.action || "") === action && (x.turnId || "") === turnId &&
+        (x.queuedSubmissionId || "") === queuedSubmissionId,
     );
     if (!item) {
       item = { threadId, text, requestId: makeId() };
       if (model) item.model = model;
       if (effort) item.effort = effort;
+      if (action) item.action = action;
+      if (turnId) item.turnId = turnId;
+      if (queuedSubmissionId) item.queuedSubmissionId = queuedSubmissionId;
       this.items.push(item);
       this.save();
     }

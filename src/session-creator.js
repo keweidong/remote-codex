@@ -27,6 +27,7 @@ export class SessionCreator {
     startTimeoutMs = 25000,
     maxRunning = 3,
     models,
+    controls,
   }) {
     this.store = store;
     this.executable = executable;
@@ -35,6 +36,7 @@ export class SessionCreator {
     this.startTimeoutMs = startTimeoutMs;
     this.maxRunning = maxRunning;
     this.models=models;
+    this.controls = controls;
     this.running = new Map();
     this.children = new Set();
     this.clients = new Set();
@@ -150,10 +152,15 @@ export class SessionCreator {
     else client.once("closed", release);
     let threadId, firstTurnId;
     const completedTurns = new Set();
+    const interruptedTurns = new Set();
     client.on("notification", (method, params) => {
       if (method === "turn/completed" && params?.threadId === threadId) {
         completedTurns.add(params.turn?.id);
-        if (firstTurnId && completedTurns.has(firstTurnId)) void client.close();
+        if (params.turn?.status === "interrupted") interruptedTurns.add(params.turn?.id);
+        if (firstTurnId && completedTurns.has(firstTurnId)) {
+          if (interruptedTurns.has(firstTurnId)) this.closeWhenIdle(client, threadId);
+          else void client.close();
+        }
       }
     });
     try {
@@ -172,6 +179,7 @@ export class SessionCreator {
         thread.projectId !== project.id || thread.ephemeral !== false
       ) throw error("Codex 未确认桌面可见的项目会话，请检查客户端版本。", 502);
       threadId = thread.id;
+      this.controls?.attach(threadId, client);
       // Keep the allocated id even if the first turn later fails or times out.
       onThreadStarted(threadId);
       const response = await client.request("turn/start", {
@@ -183,6 +191,7 @@ export class SessionCreator {
           !["inProgress", "completed"].includes(response.turn.status))
         throw error("Codex 未确认首条消息，状态未知。请检查会话，勿重复创建。", 502);
       firstTurnId = response.turn.id;
+      this.controls?.observeTurn(threadId, response.turn);
       if (response.turn.status === "completed" || completedTurns.has(firstTurnId)) void client.close();
       return threadId;
     } catch (e) {
@@ -193,6 +202,23 @@ export class SessionCreator {
           : "新会话创建未确认，状态未知。请检查本机 Codex 后重试原请求。",
         e.statusCode || 502,
       ), { cause: e });
+    }
+  }
+
+  async closeWhenIdle(client, threadId) {
+    // A completion notification can race with the next queued turn. Keep the
+    // owner until the app-server confirms both an idle thread and an empty queue.
+    await new Promise(resolve => queueMicrotask(resolve));
+    try {
+      const [thread, queued] = await Promise.all([
+        client.request("thread/read", {threadId, includeTurns: false}),
+        client.request("thread/queue/list", {threadId, limit: 1}),
+      ]);
+      if (thread?.thread?.status?.type === "idle" &&
+        Array.isArray(queued?.data) && queued.data.length === 0 &&
+        queued.nextCursor == null) await client.close();
+    } catch {
+      // Keep the owner alive when the state cannot be proven idle.
     }
   }
 

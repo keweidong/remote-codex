@@ -8,7 +8,7 @@ function failure(message, code, statusCode = 502) {
 }
 
 export class AppServerClient extends EventEmitter {
-  constructor({ executable = "codex", prefixArgs = [], codexHome, cwd, timeoutMs = 25000 } = {}) {
+  constructor({ executable = "codex", prefixArgs = [], codexHome, cwd, timeoutMs = 25000, transport = "stdio" } = {}) {
     super();
     this.timeoutMs = timeoutMs;
     this.pending = new Map();
@@ -18,7 +18,8 @@ export class AppServerClient extends EventEmitter {
     this.processClosed = false;
     this.closePromise = new Promise((resolve) => { this.resolveClose = resolve; });
     try {
-      this.child = spawn(executable, [...prefixArgs, "app-server", "--stdio"], {
+      const args = transport === "proxy" ? ["app-server", "proxy"] : ["app-server", "--stdio"];
+      this.child = spawn(executable, [...prefixArgs, ...args], {
         cwd,
         windowsHide: true,
         shell: false,

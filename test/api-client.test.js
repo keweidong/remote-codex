@@ -163,12 +163,42 @@ test("JSON 401 preserves the pairing-screen callback", async () => {
   assert.equal(rejected, 1);
 });
 
+test("control responses distinguish confirmed interruption, requested interruption, and steering", async () => {
+  for (const [action, status] of [["steer", "steered"], ["interrupt", "interrupted"], ["interrupt", "interruptRequested"]]) {
+    const api = createApiClient({fetchImpl: async () => Response.json({status, turnId: "turn-one", requestId: "control-id"})});
+    assert.equal((await api(`/api/threads/fixture/${action}`, post)).status, status);
+  }
+  const malformed = createApiClient({fetchImpl: async () => Response.json({status: "interrupted"})});
+  await assert.rejects(malformed("/api/threads/fixture/interrupt", post), e => e.controlUnknown === true);
+  const offline = createApiClient({fetchImpl: async () => { throw new Error("offline"); }});
+  await assert.rejects(offline("/api/threads/fixture/steer", post), e => e.controlUnknown === true);
+  const unknown = createApiClient({fetchImpl: async () => Response.json({error: "结果未知", controlUnknown: true}, {status: 409})});
+  await assert.rejects(unknown("/api/threads/fixture/steer", post), e => e.controlUnknown === true && e.notSubmitted !== true);
+});
+
+test("queue resume requires an explicit queue item, request and started turn receipt", async () => {
+  const path = "/api/threads/fixture/queue/resume";
+  const valid = {status: "queueStarted", requestId: "resume-id", queuedSubmissionId: "queued-one",
+    turnId: "started-turn", turnStatus: "inProgress"};
+  const api = createApiClient({fetchImpl: async () => Response.json(valid)});
+  assert.deepEqual(await api(path, post), valid);
+  for (const body of [{}, {...valid, queuedSubmissionId: ""}, {...valid, requestId: ""},
+    {...valid, turnId: ""}, {...valid, turnStatus: "unknown"}]) {
+    const invalid = createApiClient({fetchImpl: async () => Response.json(body)});
+    await assert.rejects(invalid(path, post), e => e.controlUnknown === true);
+  }
+  const offline = createApiClient({fetchImpl: async () => { throw new Error("offline"); }});
+  await assert.rejects(offline(path, post), e => e.controlUnknown === true);
+});
+
 test("confirmed sends survive follow-up history and polling failures", async () => {
   const nodes = new Map();
   const makeNode = () => ({
     textContent: "",
     value: "hello",
     disabled: false,
+    style: {},
+    scrollHeight: 46,
     classList: {
       add() {},
       remove() {},

@@ -89,6 +89,7 @@ export class Tunnel {
     prefixArgs = [],
     confirmMs = CONFIRM_MS,
     backoffMs = BACKOFF_MS,
+    onUrl = null,
   }) {
     this.executable = executable;
     this.port = port;
@@ -96,6 +97,7 @@ export class Tunnel {
     this.prefixArgs = prefixArgs;
     this.backoffMs = backoffMs;
     this.confirmMs = confirmMs;
+    this.onUrl = onUrl;
     this.config = normalizeTunnelConfig(config || {});
     this.child = null;
     this.retryTimer = null;
@@ -105,8 +107,23 @@ export class Tunnel {
       status: "stopped",
       url: "",
       error: "",
-      available: Boolean(executable && existsSync(executable)),
+      available: this.checkAvailable(),
     };
+  }
+  /**
+   * Live binary check: the npm-package binary may be downloaded in the
+   * background after startup, and the admin page must pick it up without a
+   * service restart.
+   */
+  checkAvailable() {
+    return Boolean(this.executable && existsSync(this.executable));
+  }
+  /** Notify the URL observer (relay registration); observer faults are contained. */
+  emitUrl(url) {
+    if (typeof this.onUrl !== "function") return;
+    try {
+      this.onUrl(url);
+    } catch {}
   }
   // The token is a bearer credential: it is never part of the snapshot, never
   // stored in tunnel output, and never passed on the command line where other
@@ -115,6 +132,7 @@ export class Tunnel {
     const { mode, hostname, token, autostart } = this.config;
     return {
       ...this.value,
+      available: this.checkAvailable(),
       mode,
       hostname: hostname || "",
       configured: Boolean(hostname && token),
@@ -194,11 +212,12 @@ export class Tunnel {
   }
   start() {
     if (this.child || this.retryTimer) return this.snapshot();
-    if (!this.value.available) {
+    if (!this.checkAvailable()) {
       this.value = {
         ...this.value,
         status: "error",
-        error: "未找到 cloudflared，请设置 CLOUDFLARED_PATH 后重启服务。",
+        error:
+          "未找到 cloudflared。首次启动会在后台自动下载，请稍后重试；也可以设置 CLOUDFLARED_PATH 指定自己的副本。",
       };
       return this.snapshot();
     }
@@ -237,6 +256,7 @@ export class Tunnel {
         url: "",
         error: "无法启动公网隧道，请检查 cloudflared 程序。",
       };
+      this.emitUrl(null);
     });
     child.on("exit", (code) => {
       if (this.child !== child) return;
@@ -276,6 +296,9 @@ export class Tunnel {
       url: `https://${hostname}`,
       error: "",
     };
+    // A fixed hostname needs no relay; park it so the admin page stops
+    // offering a stale instance origin.
+    this.emitUrl(null);
   }
   launchQuick() {
     this.value = { ...this.value, status: "starting", url: "", error: "" };
@@ -291,13 +314,17 @@ export class Tunnel {
       {},
       (tail) => {
         const match = tail.match(QUICK_URL);
-        if (match)
+        if (match && this.value.url !== match[0]) {
           this.value = {
             ...this.value,
             status: "running",
             url: match[0],
             error: "",
           };
+          // Hand the fresh quick URL to the relay so the fixed instance
+          // origin starts pointing here.
+          this.emitUrl(match[0]);
+        }
       },
     );
   }
@@ -326,6 +353,7 @@ export class Tunnel {
           ? `固定域名隧道反复退出（最后代码 ${code ?? "未知"}）。请核对 Token 是否完整、Public Hostname 是否指向本机手机端口。`
           : `公网隧道已退出（${code ?? "未知"}）。可以重新启动。`,
     };
+    this.emitUrl(null);
   }
   stop() {
     const child = this.child;
@@ -334,6 +362,7 @@ export class Tunnel {
     this.attempt = 0;
     if (child) child.kill();
     this.value = { ...this.value, status: "stopped", url: "", error: "" };
+    this.emitUrl(null);
     return this.snapshot();
   }
 }

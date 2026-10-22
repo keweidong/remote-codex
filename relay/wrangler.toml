@@ -1,0 +1,28 @@
+name = "codex-remote-relay"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Wildcard route: every <label>.codexremote.dpdns.org request runs this
+# Worker. Custom Domains do NOT allow wildcards; a zone route does. TOML
+# scoping note: top-level keys like `routes` MUST appear before any [table]
+# header, otherwise they silently become entries of that table.
+#
+# Requires ONE wildcard DNS record in the zone (added via dashboard):
+#   type AAAA, name "*", content "100::", proxy status: Proxied.
+# Universal SSL on the zone covers exactly one subdomain level, which is why
+# instance ids are single labels.
+# The apex (codexremote.dpdns.org) is NOT matched by this route, so the
+# existing named-tunnel hostname on the apex keeps working side by side.
+routes = [{ pattern = "*.codexremote.dpdns.org/*", zone_name = "codexremote.dpdns.org" }]
+
+# Create the KV namespace once (npx wrangler kv namespace create RELAY_KV);
+# the id below is the live namespace of this deployment.
+[[kv_namespaces]]
+binding = "RELAY_KV"
+id = "983c2b346ffa44a1a14d713c201cd7e7"
+
+# The zone whose subdomains this relay serves. Instances live at
+# https://<id>.<RELAY_DOMAIN>; the registry API lives at
+# https://registry.<RELAY_DOMAIN>/_relay/*.
+[vars]
+RELAY_DOMAIN = "codexremote.dpdns.org"

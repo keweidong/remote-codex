@@ -1,7 +1,8 @@
 const $ = (id) => document.getElementById(id);
 let status = null,
   expiresAt = 0,
-  lastTunnelUrl = "";
+  lastTunnelUrl = "",
+  lastRelayUrl = "";
 let token = new URLSearchParams(location.hash.slice(1)).get("token");
 if (location.hash) history.replaceState(null, "", location.pathname);
 function toast(text) {
@@ -46,6 +47,12 @@ function render(data) {
       url: data.tunnel.url,
       label: "外网访问 · " + data.tunnel.url,
     });
+  const relayUrl = (data.relay && data.relay.url) || "";
+  if (relayUrl)
+    options.unshift({
+      url: relayUrl,
+      label: "公网固定地址 · " + relayUrl,
+    });
   const nextSignature = JSON.stringify(options);
   if (select.dataset.signature !== nextSignature) {
     select.replaceChildren(...options.map((o) => new Option(o.label, o.url)));
@@ -53,9 +60,12 @@ function render(data) {
     if (options.some((o) => o.url === previous)) select.value = previous;
     if (data.tunnel.url && data.tunnel.url !== lastTunnelUrl)
       select.value = data.tunnel.url;
+    // The stable relay origin wins over the raw quick URL for QR pairing.
+    if (relayUrl && relayUrl !== lastRelayUrl) select.value = relayUrl;
     clearPair();
   }
   lastTunnelUrl = data.tunnel.url;
+  lastRelayUrl = relayUrl;
   addressHint();
   const t = data.tunnel;
   $("tunnel-description").textContent = t.fixed
@@ -65,7 +75,9 @@ function render(data) {
     : "手机不在同一 Wi-Fi 时，可以开启临时 Cloudflare 隧道。";
   $("tunnel-hint").textContent = t.fixed
     ? "固定域名重启后不变。首次改用此域名时请重新扫码，之后保持电脑服务运行即可继续使用。流量经 Cloudflare 转发；管理页不会公开。"
-    : "临时地址在重新启动隧道后会变化，需要重新扫码。流量经 Cloudflare 转发；管理页不会公开。";
+    : data.relay && data.relay.status === "running"
+      ? "临时地址本身会变，但下方中继固定地址不变：用固定地址配对一次即可跨重启使用。流量经中继与 Cloudflare 转发；管理页不会公开。"
+      : "临时地址在重新启动隧道后会变化，需要重新扫码。流量经 Cloudflare 转发；管理页不会公开。";
   $("tunnel-state").textContent =
     {
       stopped: "未开启",
@@ -92,7 +104,23 @@ function render(data) {
   );
   if (!t.available)
     $("tunnel-error").textContent =
-      "尚未找到 cloudflared。配置 CLOUDFLARED_PATH 后重启本服务。";
+      "尚未找到 cloudflared。首次启动会自动在后台下载，请稍后重试；也可配置 CLOUDFLARED_PATH 指定自己的副本。";
+  const r = data.relay || {};
+  $("relay-row").classList.toggle("hidden", !r.configured);
+  if (r.configured) {
+    $("relay-state").textContent =
+      {
+        disabled: "未启用",
+        idle: "等待隧道",
+        registering: "正在注册",
+        running: "已注册",
+        failed: "注册失败",
+      }[r.status] || r.status || "";
+    $("relay-state").className =
+      "status " + (r.status === "running" ? "running" : "");
+    $("relay-url").textContent = r.url || "开启临时隧道后显示固定地址";
+    $("relay-error").textContent = r.error || "";
+  }
   $("device-count").textContent = data.devices.length + " 台";
   const deviceSignature = JSON.stringify(
     data.devices.map((d) => [d.id, d.name, d.baseUrl, Math.floor(d.lastSeen / 60000)]),
@@ -141,7 +169,9 @@ function render(data) {
 function addressHint() {
   const url = $("base-url").value;
   $("address-hint").textContent =
-    status?.tunnel?.fixed && url === status.tunnel.url
+    status?.relay?.url && url === status.relay.url
+    ? "公网固定地址：配对一次后跨服务重启有效，手机书签不变；流量经中继与 Cloudflare 转发。"
+    : status?.tunnel?.fixed && url === status.tunnel.url
     ? "固定域名可用手机流量访问；在此地址配对一次后，重启服务仍可使用。"
     : url.includes("trycloudflare.com")
       ? "手机可使用流量或其他 Wi-Fi；临时地址重启后需重新配对。"

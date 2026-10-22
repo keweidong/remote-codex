@@ -6,6 +6,7 @@ import { fixture } from "./fixtures.js";
 import { createCodexStore } from "../src/codex-store.js";
 import { SessionCreator } from "../src/session-creator.js";
 import { appServerFixture } from "./app-server-fixture.js";
+import { TurnControls } from "../src/turn-controls.js";
 
 const requestId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
@@ -37,6 +38,54 @@ test("a started session continues past its startup deadline and occupies a runni
   await new Promise(resolve => setTimeout(resolve, 1650));
   assert.equal(creator.children.size, 1, "startup timeout must not terminate the first turn");
   assert.equal([...creator.children][0].killed, false);
+});
+
+test("a phone-created runtime can be steered and confirms interruption before its owner closes", async t => {
+  const {creator, dir} = setupCreator(t, appServerFixture(), {startTimeoutMs: 1500});
+  const controls = new TurnControls({
+    dataDir: join(dir, "controls"),
+    store: {requireThread(id) {
+      assert.equal(id, "new-session");
+      return {id, cwd: dir};
+    }},
+    confirmTimeoutMs: 100,
+    sharedFactory: () => { throw new Error("must use existing owner"); },
+  });
+  creator.controls = controls;
+  t.after(() => controls.stop());
+  await creator.create(input);
+  const state = await controls.status("new-session");
+  assert.equal(state.canSteer, true);
+  assert.equal(state.turnId, "first-turn");
+  const target = {threadId: "new-session", turnId: "first-turn", deviceId: "phone", requestId: "phone-control-request-1"};
+  assert.equal((await controls.act({...target, action: "steer", text: "补充当前轮要求"})).status, "steered");
+  assert.equal((await controls.act({...target, requestId: "phone-control-request-2", action: "interrupt"})).status, "interrupted");
+  const calls = JSON.parse(readFileSync(join(dir, "requests.json"), "utf8"));
+  assert.equal(calls.filter(c => c.method === "turn/start").length, 1);
+  assert.equal(calls.filter(c => c.method === "turn/steer").length, 1);
+  assert.equal(calls.filter(c => c.method === "turn/interrupt").length, 1);
+});
+
+test("first-turn interruption does not close an owner after a next queued turn starts", async t => {
+  const {creator, dir} = setupCreator(t, appServerFixture(), {startTimeoutMs: 1500});
+  const controls = new TurnControls({
+    dataDir: join(dir, "controls"),
+    store: {requireThread: id => ({id, cwd: dir})},
+    confirmTimeoutMs: 100,
+    sharedFactory: () => { throw new Error("must use existing owner"); },
+  });
+  creator.controls = controls;
+  t.after(() => controls.stop());
+  const result = await creator.create(input);
+  const client = [...creator.clients][0];
+  client.emit("notification", "turn/completed", {
+    threadId: result.threadId, turn: {id: "first-turn", status: "interrupted"},
+  });
+  client.emit("notification", "turn/started", {
+    threadId: result.threadId, turn: {id: "next-turn", status: "inProgress"},
+  });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(client.processClosed, false);
 });
 
 test("passes the configured Codex home and permits registered non-Git directories", async (t) => {

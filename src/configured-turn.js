@@ -34,13 +34,14 @@ function settingsConfirmation(client, threadId, settings, timeoutMs) {
 // queue/add has no model fields. Update only this server's successfully resumed
 // thread, await its settings notification, then enqueue through the durable API.
 export class ConfiguredTurns {
-  constructor({ store, executable = "codex", prefixArgs = [], codexHome, timeoutMs = 25000, maxRunning = 3 }) {
+  constructor({ store, executable = "codex", prefixArgs = [], codexHome, timeoutMs = 25000, maxRunning = 3, controls }) {
     this.store = store;
     this.executable = executable;
     this.prefixArgs = prefixArgs;
     this.codexHome = codexHome;
     this.timeoutMs = timeoutMs;
     this.maxRunning = maxRunning;
+    this.controls = controls;
     this.clients = new Map();
     this.stopping = false;
   }
@@ -79,6 +80,9 @@ export class ConfiguredTurns {
       if (resumed?.thread?.id !== thread.id)
         throw notSent("Codex 未确认目标会话，本次消息未发送。", 502);
       resumeAccepted = true;
+      this.controls?.attach(thread.id, client);
+      for (const turn of resumed.thread.turns || [])
+        this.controls?.observeTurn(thread.id, turn);
       this.checkStopping();
       if (this.store.pendingCount?.(thread.id) > 0)
         throw notSent("会话已有排队消息，本次消息未发送，也未更改模型设置。");

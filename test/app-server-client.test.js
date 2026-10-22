@@ -53,6 +53,17 @@ test("initializes once before requests and uses the selected CLI home and direct
   });
 });
 
+test("proxy transport attaches to an existing control socket without starting a new app-server owner", async t => {
+  const {client} = setup(t, `
+    lines.on("line", line => {
+      const m = JSON.parse(line);
+      send({id:m.id,result:{args:process.argv.slice(2)}});
+    });
+  `, {transport: "proxy"});
+  const result = await client.request("inspect");
+  assert.deepEqual(result.args, ["app-server", "proxy"]);
+});
+
 test("correlates out-of-order responses and preserves split UTF-8 notifications", async (t) => {
   const { client } = setup(t, `
     let first;

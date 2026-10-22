@@ -53,3 +53,35 @@ test("legacy submissions without model options reuse their inherited identity", 
   assert.equal(tracker.get("chat", "old", () => "new", {model: "", effort: ""}).requestId, "legacy");
   assert.equal(tracker.get("chat", "old", () => "new", {effort: "high"}).requestId, "new");
 });
+
+test("control identities bind the action and original turn across reloads without colliding with queue sends", () => {
+  const values = new Map();
+  const storage = {getItem: k => values.get(k), setItem: (k, v) => values.set(k, v)};
+  const tracker = new SubmissionTracker(storage);
+  let n = 0;
+  const uuid = () => "request-" + ++n;
+  const queued = tracker.get("chat", "same", uuid);
+  const steered = tracker.get("chat", "same", uuid, {action: "steer", turnId: "turn-one"});
+  const later = tracker.get("chat", "same", uuid, {action: "steer", turnId: "turn-two"});
+  const interrupted = tracker.get("chat", "same", uuid, {action: "interrupt", turnId: "turn-one"});
+  assert.equal(new Set([queued.requestId, steered.requestId, later.requestId, interrupted.requestId]).size, 4);
+  assert.equal(steered.action, "steer");
+  assert.equal(steered.turnId, "turn-one");
+  const restored = new SubmissionTracker(storage).get("chat", "same", uuid, {action: "steer", turnId: "turn-one"});
+  assert.equal(restored.requestId, steered.requestId);
+});
+
+test("queue resume identities stay bound to the original queued item across reloads", () => {
+  const values = new Map();
+  const storage = {getItem: k => values.get(k), setItem: (k, v) => values.set(k, v)};
+  const tracker = new SubmissionTracker(storage, "resume");
+  let n = 0;
+  const id = () => "resume-" + ++n;
+  const one = tracker.get("chat", "", id, {action: "resumeQueue", queuedSubmissionId: "head-one"});
+  const two = tracker.get("chat", "", id, {action: "resumeQueue", queuedSubmissionId: "head-two"});
+  assert.notEqual(one.requestId, two.requestId);
+  const original = new SubmissionTracker(storage, "resume").get("chat", "", id,
+    {action: "resumeQueue", queuedSubmissionId: "head-one"});
+  assert.equal(original.requestId, one.requestId);
+  assert.equal(original.queuedSubmissionId, "head-one");
+});

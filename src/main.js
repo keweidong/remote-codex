@@ -14,7 +14,21 @@ import { Queue } from "./queue.js";
 import { SessionCreator } from "./session-creator.js";
 import {ModelCatalog} from './model-catalog.js';
 import {ConfiguredTurns} from './configured-turn.js';
+import { TurnControls } from "./turn-controls.js";
 import { saveJson } from "./auth.js";
+import { Relay } from "./relay.js";
+
+// The cloudflared npm package ships the platform binary via postinstall; when
+// it was installed with --ignore-scripts the binary is missing and install()
+// downloads it on demand. Both imports are optional so a machine that already
+// provides cloudflared elsewhere keeps working without the package.
+let cloudflaredNpmBin = "",
+  installCloudflared = null;
+try {
+  const cf = await import("cloudflared");
+  cloudflaredNpmBin = typeof cf.bin === "string" ? cf.bin : "";
+  installCloudflared = typeof cf.install === "function" ? cf.install : null;
+} catch {}
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const dataDir =
@@ -52,21 +66,54 @@ if (staleRuntime(runtimePath)) {
     unlinkSync(runtimePath);
   } catch {}
 }
-const cloudflaredPath =
-  process.env.CLOUDFLARED_PATH ||
-  join(
-    homedir(),
-    ".dsh",
-    "profiles",
-    "desktop",
-    "node_modules",
-    "cloudflared",
-    "bin",
-    "cloudflared.exe",
-  );
+const dshCloudflared = join(
+  homedir(),
+  ".dsh",
+  "profiles",
+  "desktop",
+  "node_modules",
+  "cloudflared",
+  "bin",
+  "cloudflared.exe",
+);
+function pickCloudflared() {
+  // Explicit configuration wins; then the npm-package binary (also the target
+  // of the background download below); then the DSH-bundled copy for machines
+  // that happen to have DeepSeek Harness installed.
+  if (process.env.CLOUDFLARED_PATH) return process.env.CLOUDFLARED_PATH;
+  if (cloudflaredNpmBin && existsSync(cloudflaredNpmBin))
+    return cloudflaredNpmBin;
+  if (existsSync(dshCloudflared)) return dshCloudflared;
+  return cloudflaredNpmBin || dshCloudflared;
+}
+const cloudflaredPath = pickCloudflared();
+// A fresh machine has no binary yet: download it in the background (~55 MB,
+// one time) instead of blocking startup. Tunnel availability is checked live,
+// so the admin page picks the binary up as soon as it lands, and the
+// retryAutostart hook below reconnects a fixed-domain tunnel that skipped its
+// boot autostart while the download was still running.
+let cloudflaredReady = Promise.resolve(true);
+if (
+  !process.env.CLOUDFLARED_PATH &&
+  installCloudflared &&
+  !existsSync(cloudflaredPath)
+) {
+  console.log("首次运行：正在后台下载 cloudflared（约 55 MB，仅一次）…");
+  cloudflaredReady = installCloudflared()
+    .then(() => true)
+    .catch((e) => {
+      console.error(`cloudflared 后台下载失败：${e?.message || e}`);
+      return false;
+    });
+}
+const relay = new Relay({ dataDir });
 const store = createCodexStore({ codexHome });
+const controls = new TurnControls({
+  store, dataDir, executable: process.env.CODEX_CLI_PATH || "codex",
+  codexHome, cwd: resolve(import.meta.dirname, ".."),
+});
 const models=new ModelCatalog({executable:process.env.CODEX_CLI_PATH||'codex',codexHome,cwd:resolve(import.meta.dirname,'..')});
-const configuredTurns=new ConfiguredTurns({store,executable:process.env.CODEX_CLI_PATH||'codex',codexHome});
+const configuredTurns=new ConfiguredTurns({store,executable:process.env.CODEX_CLI_PATH||'codex',codexHome,controls});
 const queue = new Queue({
   store,
   dataDir,
@@ -80,6 +127,7 @@ const creator = new SessionCreator({
   codexHome,
   executable: process.env.CODEX_CLI_PATH || "codex",
   models,
+  controls,
 });
 let stopping = false;
 const stop = async () => {
@@ -97,9 +145,11 @@ const app = createApp({
   queue,
   creator,
   models,
+  controls,
   dataDir,
   adminToken,
   cloudflaredPath,
+  relay,
   onShutdown: stop,
 });
 try {
@@ -115,6 +165,9 @@ try {
     startedAt: Date.now(),
   });
   console.log(`Codex Remote Web ready: ${urls.adminUrl}`);
+  cloudflaredReady.then((ok) => {
+    if (ok) app.retryAutostart();
+  });
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 } catch (e) {
